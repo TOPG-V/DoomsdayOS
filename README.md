@@ -142,16 +142,16 @@ The administrator can change `stream_mib_per_second` in `/etc/doomsday-vault/bac
 
 ## Hotfix 2026-11-09 — Empty ZIM catalog in V6
 
-**Symptom:** After running \`sudo doomsday-setup\`, pressing Enter at the catalog filter prints \`No matching downloadable ZIMs\`. V6's parser recognized direct \`.zim\` acquisition links only. Kiwix OPDS also uses \`.zim.meta4\` URLs even when advertising MIME type \`application/x-zim\`, so archives were skipped.
+**Symptom:** After running `sudo doomsday-setup`, pressing Enter at the catalog filter prints `No matching downloadable ZIMs`. V6's parser recognized direct `.zim` acquisition links only. Kiwix OPDS also uses `.zim.meta4` URLs even when advertising MIME type `application/x-zim`, so archives were skipped.
 
-**Fix:** The updated ZIM selector normalizes official \`.zim.meta4\` acquisition references into the corresponding direct \`.zim\` download URLs, improves paginated filtering, and treats \`all\` as an alias for browsing at the initial title-filter prompt. Selecting all downloads is still a separate selection and space check.
+**Fix:** The updated ZIM selector normalizes official `.zim.meta4` acquisition references into the corresponding direct `.zim` download URLs, improves paginated filtering, and treats `all` as an alias for browsing at the initial title-filter prompt. Selecting all downloads is still a separate selection and space check.
 
 To update **an already installed** V6 without touching ZFS pools, paste this **one line** into Ubuntu Terminal when connected to the Internet:
 
-\`\`\`bash
+```bash
 f="$(mktemp --suffix=.py)" && curl -fsSL https://raw.githubusercontent.com/TOPG-V/DoomsdayOS/main/app/zim_manager.py -o "$f" && python3 -m py_compile "$f" && sudo install -m 0644 "$f" /opt/doomsday-firstboot/app/zim_manager.py && rm -f "$f" && sudo doomsday-zims wizard
-\`\`\`
+```
 
-When you reach \`Search titles\`, press Enter to browse up to the first 100 ZIMs, or type a keyword such as \`Wikipedia\`. Then pick listed numbers or type \`all\` at the **selection** prompt. No download begins without explicit \`YES\` confirmation.
+When you reach `Search titles`, press Enter to browse up to the first 100 ZIMs, or type a keyword such as `Wikipedia`. Then pick listed numbers or type `all` at the **selection** prompt. No download begins without explicit `YES` confirmation.
 
 Five additional unit tests cover OPDS metalinks, URL normalization, size metadata, untrusted host rejection, and pagination. These are synthetic feed tests; a live Kiwix catalog and full ZIM download must still be confirmed on connected hardware.
