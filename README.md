@@ -140,6 +140,30 @@ The administrator can change `stream_mib_per_second` in `/etc/doomsday-vault/bac
 * Archive catalog compatibility depends on Kiwix's live feed and SHA-256 sidecars; test the first real download. Mocked tests cannot guarantee publisher endpoints stay unchanged.
 
 
+## Three first-boot download packages (original ZIM collection)
+
+The `sudo doomsday-setup` first-boot wizard and `sudo doomsday-zims wizard` now offer **exactly three download choices**, based on the original `Zim(1).zip` torrent collection, rather than the entire Kiwix catalog:
+
+| Choice | Contents | Archive size (decimal GB) |
+|---|---|---:|
+| `1` **Full** | All 39 original ZIMs, including TED Talks | **575.0 GB** (~577 GB target) |
+| `2` **Partial** | The same 38 original ZIMs excluding TED Talks | **483.8 GB** |
+| `3` **Wikipedia Only** | Full English Wikipedia (`wikipedia_en_all_maxi_2026-08.zim`) | **127.4 GB** |
+
+**The 400 GB partial estimate needs correction:** the exact source bundle totals 575.0 GB, and TED Talks contributes 91.18 GB. Leaving every other archive intact therefore requires 483.8 GB, not 400 GB. Disk-space requirements are greater because ZFS replication, temporary staging, free-space reserve, and independent backups can consume additional space. The wizard calculates and checks storage before enqueueing; it does not format disks.
+
+This version ships the exact 39-file manifest generated from the user's original torrent and SHA-256 metadata. One entry (`devdocs_en_python_2026-10.zim`) has no supplied checksum; a verified publisher sidecar is required at download time. Archives remain pinned to the provided 2025–2026 versions and may become unavailable at their publisher. Downloads are resumable and published only after SHA-256 verification; installed ZIMs stay read-only as in V6. No full-size ZIMs are stored on GitHub.
+
+Select **1**, **2** or **3**, review what is included, and type `YES` to add the package to the existing download queue after the storage/backup prompt. Press Enter to cancel. For individual searching of live Kiwix entries, use `sudo doomsday-zims browse` instead; that command preserves the previous search and individual-selection workflow.
+
+### Upgrade an already installed V6 / V6.1
+
+With Internet access, paste this single line to update only the two app files (not the ZFS pool configuration), verify syntax, and open the three-option menu:
+
+```bash
+t="$(mktemp -d)" && curl -fsSL https://raw.githubusercontent.com/TOPG-V/DoomsdayOS/main/app/zim_manager.py -o "$t/zim_manager.py" && curl -fsSL https://raw.githubusercontent.com/TOPG-V/DoomsdayOS/main/app/bundle_manifest.json -o "$t/bundle_manifest.json" && python3 -m py_compile "$t/zim_manager.py" && python3 -m json.tool "$t/bundle_manifest.json" >/dev/null && sudo install -m 0644 "$t/zim_manager.py" /opt/doomsday-firstboot/app/zim_manager.py && sudo install -m 0644 "$t/bundle_manifest.json" /opt/doomsday-firstboot/app/bundle_manifest.json && rm -rf "$t" && sudo doomsday-zims wizard
+```
+
 ## Hotfix 2026-11-09 — Empty ZIM catalog in V6
 
 **Symptom:** After running `sudo doomsday-setup`, pressing Enter at the catalog filter prints `No matching downloadable ZIMs`. V6's parser recognized direct `.zim` acquisition links only. Kiwix OPDS also uses `.zim.meta4` URLs even when advertising MIME type `application/x-zim`, so archives were skipped.
