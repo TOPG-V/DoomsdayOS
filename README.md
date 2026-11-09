@@ -179,3 +179,16 @@ f="$(mktemp --suffix=.py)" && curl -fsSL https://raw.githubusercontent.com/TOPG-
 When you reach `Search titles`, press Enter to browse up to the first 100 ZIMs, or type a keyword such as `Wikipedia`. Then pick listed numbers or type `all` at the **selection** prompt. No download begins without explicit `YES` confirmation.
 
 Five additional unit tests cover OPDS metalinks, URL normalization, size metadata, untrusted host rejection, and pagination. These are synthetic feed tests; a live Kiwix catalog and full ZIM download must still be confirmed on connected hardware.
+
+
+## V6.3 — clear storage estimates and optional ZIM-only space-saving mode
+
+The three download presets remain **Full** (575.0 GB, 39 archives), **Partial** (483.8 GB, 38 archives; only TED Talks removed), and **Wikipedia Only** (127.4 GB, one archive). This is the *download payload*, **not** required disk capacity.
+
+For the Full preset, the V6 preservation default of ZFS `copies=2` requires about 1,071 GiB for the final archives alone. The largest source archive (Gutenberg, 221.25 GB) needs up to another 412 GiB of two-copy staging while being verified and published. Including the 3 GiB reserve gives approximately **1,486 GiB of peak pool usage (1.60 TB)**. This is why a VM with 888 GiB of free pool space refuses to queue Full.
+
+**New behavior:** The wizard prints actual download bytes, archive duplication, temporary staging, peak capacity, and free capacity separately. If two-copy storage does not fit but single-copy storage does, the wizard optionally offers **SINGLE COPY** mode. It requires the literal `SINGLE COPY` consent and the usual final `YES`. Unless BOTH are provided, no ZFS copies property is changed and nothing is queued. It validates the two mounted dedicated datasets and explicitly refuses to alter the running OS root, boot datasets, or pool roots. Existing blocks are **not** converted; `copies=1` affects only newly written data.
+
+For Full, `copies=1` on the dedicated archive and staging datasets lowers the estimated peak to around **745 GiB**, without changing download bytes. This is **less redundancy against corruption**, not a free space compression trick. Do not rely on it as protection against hardware failure; an independent, checksum-verified second-device backup is strongly recommended. This estimate is not a guarantee if other applications, snapshots or ZFS metadata use additional space.
+
+To use the new wizard on an existing V6 machine, install the updated V6.3 ZIP or replace `app/zim_manager.py` and `app/bundle_manifest.json` in `/opt/doomsday-firstboot/app` with the files from GitHub, then run `sudo doomsday-zims wizard`. Do **not** rerun the installer from an older, extracted V6 folder, which would replace the new code with old code. The status remains available through `sudo doomsday-zims status`.
