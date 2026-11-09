@@ -1,0 +1,365 @@
+{
+  "schema": 1,
+  "source": "User-provided Zim(1).zip torrent metadata and SHA-256 sidecars (2026-11-09)",
+  "notes": "URLs and byte lengths from original .torrent files; content hashes from .sha256.txt files when provided. Download URLs can expire.",
+  "items": [
+    {
+      "id": "appropedia_en_all_maxi_2026-02.zim",
+      "title": "appropedia en all maxi 2026-02",
+      "url": "https://mirror.download.kiwix.org/zim/other/appropedia_en_all_maxi_2026-02.zim",
+      "size": 581641351,
+      "sha256": "dcf200ba723c27397e1c9a2e4891ff91fa13993df1fa285315190d8525a53469"
+    },
+    {
+      "id": "devdocs_en_c_2026-10.zim",
+      "title": "devdocs en c 2026-10",
+      "url": "https://mirror.download.kiwix.org/zim/devdocs/devdocs_en_c_2026-10.zim",
+      "size": 1356873,
+      "sha256": "5b5c00cd83c0cbfc7e89220721afbbc15ce82210d62229ac3639a169a3352431"
+    },
+    {
+      "id": "devdocs_en_cpp_2026-10.zim",
+      "title": "devdocs en cpp 2026-10",
+      "url": "https://mirror.download.kiwix.org/zim/devdocs/devdocs_en_cpp_2026-10.zim",
+      "size": 8048596,
+      "sha256": "ee485e3551b3b8fcd7690126ddfd8d96a63b8c85b7bd81c6cb34a89a1a0a0179"
+    },
+    {
+      "id": "devdocs_en_css_2026-10.zim",
+      "title": "devdocs en css 2026-10",
+      "url": "https://mirror.download.kiwix.org/zim/devdocs/devdocs_en_css_2026-10.zim",
+      "size": 2732639,
+      "sha256": "3f286000670d80d013d0385c580ef13b9307a2065bd3be0cf7d6cf792c00bab2"
+    },
+    {
+      "id": "devdocs_en_html_2026-10.zim",
+      "title": "devdocs en html 2026-10",
+      "url": "https://mirror.download.kiwix.org/zim/devdocs/devdocs_en_html_2026-10.zim",
+      "size": 1721660,
+      "sha256": "c0e1f40b73fd9831b48cda124e167c0847a779972afc406a27cd842edc909516"
+    },
+    {
+      "id": "devdocs_en_javascript_2026-10.zim",
+      "title": "devdocs en javascript 2026-10",
+      "url": "https://mirror.download.kiwix.org/zim/devdocs/devdocs_en_javascript_2026-10.zim",
+      "size": 2641021,
+      "sha256": "a4a70cffdc68d2c70d40ff6bd55bf42c70d2e18c2445e5b481b22d6b9495f344"
+    },
+    {
+      "id": "devdocs_en_man_2026-10.zim",
+      "title": "devdocs en man 2026-10",
+      "url": "https://mirror.download.kiwix.org/zim/devdocs/devdocs_en_man_2026-10.zim",
+      "size": 29591154,
+      "sha256": "89f699d6b77df358847f36bd72129eeb1b7d9f9f2a16c35e550005d04cda51ac"
+    },
+    {
+      "id": "devdocs_en_nextjs_2026-10.zim",
+      "title": "devdocs en nextjs 2026-10",
+      "url": "https://mirror.download.kiwix.org/zim/devdocs/devdocs_en_nextjs_2026-10.zim",
+      "size": 1043391,
+      "sha256": "a67a07486a6ba75990aa8400735ca7b1a5ad4d60bf5ab8d11b3f41f6b96b9604"
+    },
+    {
+      "id": "devdocs_en_node_2026-08.zim",
+      "title": "devdocs en node 2026-08",
+      "url": "https://mirror.download.kiwix.org/zim/devdocs/devdocs_en_node_2026-08.zim",
+      "size": 1416442,
+      "sha256": "3060bd03ee436920b03b54de908de368a58e34d9e96534ebd85bda7120686921"
+    },
+    {
+      "id": "devdocs_en_python_2026-10.zim",
+      "title": "devdocs en python 2026-10",
+      "url": "https://mirror.download.kiwix.org/zim/devdocs/devdocs_en_python_2026-10.zim",
+      "size": 4775641
+    },
+    {
+      "id": "devdocs_en_rust_2026-10.zim",
+      "title": "devdocs en rust 2026-10",
+      "url": "https://mirror.download.kiwix.org/zim/devdocs/devdocs_en_rust_2026-10.zim",
+      "size": 6229825,
+      "sha256": "90350f0cf55b26190b7fdc3b52f06fb263d835d4458f7c870be15a0a6a856023"
+    },
+    {
+      "id": "devdocs_en_vue_2026-08.zim",
+      "title": "devdocs en vue 2026-08",
+      "url": "https://mirror.download.kiwix.org/zim/devdocs/devdocs_en_vue_2026-08.zim",
+      "size": 975797,
+      "sha256": "33d5231e492d05a47cc844afcb13540d61ff8acc938329e1118ea264fd8de70b"
+    },
+    {
+      "id": "gutenberg_en_all_2025-11.zim",
+      "title": "gutenberg en all 2025-11",
+      "url": "https://mirror.download.kiwix.org/zim/gutenberg/gutenberg_en_all_2025-11.zim",
+      "size": 221251590584,
+      "sha256": "01677c8d554a1cab2cbfd020ac99ebca7dd6c74d3ce0d13f266a2ba603dfaf28"
+    },
+    {
+      "id": "ifixit_en_all_2025-12.zim",
+      "title": "ifixit en all 2025-12",
+      "url": "https://mirror.download.kiwix.org/zim/ifixit/ifixit_en_all_2025-12.zim",
+      "size": 3570695757,
+      "sha256": "9bb5f3408707fd0300c6ef47a425c3217187f144cd9154a928183816aa72eead"
+    },
+    {
+      "id": "iot.stackexchange.com_en_all_2026-10.zim",
+      "title": "iot.stackexchange.com en all 2026-10",
+      "url": "https://mirror.download.kiwix.org/zim/stack_exchange/iot.stackexchange.com_en_all_2026-10.zim",
+      "size": 20687833,
+      "sha256": "21813d888948852332ceddbe48d80d7aab677de203ed7f7fe737ad8b629fc5b4"
+    },
+    {
+      "id": "libretexts.org_en_bio_2025-01.zim",
+      "title": "libretexts.org en bio 2025-01",
+      "url": "https://mirror.download.kiwix.org/zim/libretexts/libretexts.org_en_bio_2025-01.zim",
+      "size": 2240946728,
+      "sha256": "aa914c19a690429b5d41ccbc91ba8cf7bc2980211b998c8a4a82ef3a21375321"
+    },
+    {
+      "id": "libretexts.org_en_biz_2026-01.zim",
+      "title": "libretexts.org en biz 2026-01",
+      "url": "https://mirror.download.kiwix.org/zim/libretexts/libretexts.org_en_biz_2026-01.zim",
+      "size": 839753856,
+      "sha256": "1c969499cb8b800999921270a48b69af6f615e5d7d748fe1e26cbe532eaedfa3"
+    },
+    {
+      "id": "libretexts.org_en_chem_2025-01.zim",
+      "title": "libretexts.org en chem 2025-01",
+      "url": "https://mirror.download.kiwix.org/zim/libretexts/libretexts.org_en_chem_2025-01.zim",
+      "size": 2182916266,
+      "sha256": "83ba2fbfe36d72abe919661de5548103bb6674749bc26531cd61f83d8a825764"
+    },
+    {
+      "id": "libretexts.org_en_eng_2025-01.zim",
+      "title": "libretexts.org en eng 2025-01",
+      "url": "https://mirror.download.kiwix.org/zim/libretexts/libretexts.org_en_eng_2025-01.zim",
+      "size": 678394631,
+      "sha256": "3d4b25d03082172f4793625163b366a7d21655a5f8868d0758a9c3649ce9d5c2"
+    },
+    {
+      "id": "libretexts.org_en_geo_2026-01.zim",
+      "title": "libretexts.org en geo 2026-01",
+      "url": "https://mirror.download.kiwix.org/zim/libretexts/libretexts.org_en_geo_2026-01.zim",
+      "size": 1188116861,
+      "sha256": "ffceff9d0d14dbd2e154c6734658257daf301bde18962ee0d87aa1dd0d5cfaef"
+    },
+    {
+      "id": "libretexts.org_en_human_2026-07.zim",
+      "title": "libretexts.org en human 2026-07",
+      "url": "https://mirror.download.kiwix.org/zim/libretexts/libretexts.org_en_human_2026-07.zim",
+      "size": 4433682987,
+      "sha256": "c172268bbcc37b0d3dd21e462c6f5e308edb7ad5d76e5c11fa2bbd1b11027cd8"
+    },
+    {
+      "id": "libretexts.org_en_k12_2026-01.zim",
+      "title": "libretexts.org en k12 2026-01",
+      "url": "https://mirror.download.kiwix.org/zim/libretexts/libretexts.org_en_k12_2026-01.zim",
+      "size": 369809249,
+      "sha256": "101d5b54aba8ff5c6c63c263b2da6ef1a60eda3d5a600a4182bf55c6bc853895"
+    },
+    {
+      "id": "libretexts.org_en_math_2026-01.zim",
+      "title": "libretexts.org en math 2026-01",
+      "url": "https://mirror.download.kiwix.org/zim/libretexts/libretexts.org_en_math_2026-01.zim",
+      "size": 830646230,
+      "sha256": "7a07f9a4c7ad1ca51c300d573bc74df27a5556f7c4c6fe9407bc337ad9b7b4c8"
+    },
+    {
+      "id": "libretexts.org_en_med_2025-01.zim",
+      "title": "libretexts.org en med 2025-01",
+      "url": "https://mirror.download.kiwix.org/zim/libretexts/libretexts.org_en_med_2025-01.zim",
+      "size": 1192567339,
+      "sha256": "1def4fb3c76d347cfd2af9eabd8f8edefd24086cc17b476130f710214a5bbc1e"
+    },
+    {
+      "id": "libretexts.org_en_phys_2026-01.zim",
+      "title": "libretexts.org en phys 2026-01",
+      "url": "https://mirror.download.kiwix.org/zim/libretexts/libretexts.org_en_phys_2026-01.zim",
+      "size": 559554453,
+      "sha256": "ace498581e085093cc86383439342d9ff5a4604bd87f6b82448c019e1264830f"
+    },
+    {
+      "id": "libretexts.org_en_socialsci_2025-01.zim",
+      "title": "libretexts.org en socialsci 2025-01",
+      "url": "https://mirror.download.kiwix.org/zim/libretexts/libretexts.org_en_socialsci_2025-01.zim",
+      "size": 2046178905,
+      "sha256": "ab5473ec0d662d14394a681d4c0a725fe768ff14cdefc9d99cd71d0a968e6151"
+    },
+    {
+      "id": "libretexts.org_en_stats_2026-01.zim",
+      "title": "libretexts.org en stats 2026-01",
+      "url": "https://mirror.download.kiwix.org/zim/libretexts/libretexts.org_en_stats_2026-01.zim",
+      "size": 215779148,
+      "sha256": "39697d1ef60ee5ae24c5b54514e0e1b8f2255ed7d12ef273af825a7f2ed5c5e7"
+    },
+    {
+      "id": "libretexts.org_en_workforce_2026-01.zim",
+      "title": "libretexts.org en workforce 2026-01",
+      "url": "https://mirror.download.kiwix.org/zim/libretexts/libretexts.org_en_workforce_2026-01.zim",
+      "size": 513663835,
+      "sha256": "95a383e7ea4733c7bd37c19ff53a42614943e3eec9b832e78908264b3b7e7c67"
+    },
+    {
+      "id": "maps_en_all_2026-06.zim",
+      "title": "maps en all 2026-06",
+      "url": "https://mirror.download.kiwix.org/zim/maps/maps_en_all_2026-06.zim",
+      "size": 77731456103,
+      "sha256": "399cf845a889018607423562ab467b2ece55b5532af4f5e105a07093866f2655"
+    },
+    {
+      "id": "medlineplus.gov_en_all_2025-01.zim",
+      "title": "medlineplus.gov en all 2025-01",
+      "url": "https://mirror.download.kiwix.org/zim/zimit/medlineplus.gov_en_all_2025-01.zim",
+      "size": 1944841111,
+      "sha256": "3ce8933e8b249cf685f5f108e8f10d9a7e3becb2ee4e91f3aedb5b0cf4d2e596"
+    },
+    {
+      "id": "minecraft.wiki_en_all_2026-08.zim",
+      "title": "minecraft.wiki en all 2026-08",
+      "url": "https://mirror.download.kiwix.org/zim/other/minecraft.wiki_en_all_2026-08.zim",
+      "size": 1941160495,
+      "sha256": "1abbdd90762ab56676dc43bc4e1f019dd04fba3e9c97a3ac520a1c4f769c94d5"
+    },
+    {
+      "id": "ready.gov_en_all_2026-10.zim",
+      "title": "ready.gov en all 2026-10",
+      "url": "https://mirror.download.kiwix.org/zim/zimit/ready.gov_en_all_2026-10.zim",
+      "size": 2063895408,
+      "sha256": "c88ce03db2a6dd855c1075d87abb6dceac678718e0dd3fa7912009469b9ca225"
+    },
+    {
+      "id": "ted_mul_all_2026-09.zim",
+      "title": "ted mul all 2026-09",
+      "url": "https://mirror.download.kiwix.org/zim/ted/ted_mul_all_2026-09.zim",
+      "size": 91175796694,
+      "sha256": "8c58995e61a0c799ffc0ef55d835974bb6370bedb66d7abab52f79f2dc4d07b9"
+    },
+    {
+      "id": "wikipedia_en_all_maxi_2026-08.zim",
+      "title": "wikipedia en all maxi 2026-08",
+      "url": "https://mirror.download.kiwix.org/zim/wikipedia/wikipedia_en_all_maxi_2026-08.zim",
+      "size": 127418087648,
+      "sha256": "34162d18b9f96f494eac48a73a309c72e0bc95d85f76be405d0f5de795854aa6"
+    },
+    {
+      "id": "wikipedia_en_medicine_maxi_2026-10.zim",
+      "title": "wikipedia en medicine maxi 2026-10",
+      "url": "https://mirror.download.kiwix.org/zim/wikipedia/wikipedia_en_medicine_maxi_2026-10.zim",
+      "size": 1864210320,
+      "sha256": "9a1570f2f346aa18694ee520e0483f19b7447f69e0970e2f727c53ccf0dcc7d6"
+    },
+    {
+      "id": "wikisource_en_all_maxi_2026-09.zim",
+      "title": "wikisource en all maxi 2026-09",
+      "url": "https://mirror.download.kiwix.org/zim/wikisource/wikisource_en_all_maxi_2026-09.zim",
+      "size": 8615937017,
+      "sha256": "e708fde1d8f69f40caba4c6840e7a8dcccbd20a0eedc9a84b461108aae096a74"
+    },
+    {
+      "id": "wikispecies_en_all_maxi_2026-10.zim",
+      "title": "wikispecies en all maxi 2026-10",
+      "url": "https://mirror.download.kiwix.org/zim/other/wikispecies_en_all_maxi_2026-10.zim",
+      "size": 3547223112,
+      "sha256": "8a428becd63e7f3b14c166ffb826b73efe858dabe861318061440e08aec8ccc6"
+    },
+    {
+      "id": "wikivoyage_en_all_maxi_2026-09.zim",
+      "title": "wikivoyage en all maxi 2026-09",
+      "url": "https://mirror.download.kiwix.org/zim/wikivoyage/wikivoyage_en_all_maxi_2026-09.zim",
+      "size": 1071168673,
+      "sha256": "ebaf235b4f95aa7f8666e0a613578577569eb6c81562ebcf397a7ba52173c848"
+    },
+    {
+      "id": "wiktionary_en_all_nopic_2026-11.zim",
+      "title": "wiktionary en all nopic 2026-11",
+      "url": "https://mirror.download.kiwix.org/zim/wiktionary/wiktionary_en_all_nopic_2026-11.zim",
+      "size": 14847562421,
+      "sha256": "a2909d79f62ae05b644310566d68e766100fe7cdd5a061b0e4f2a585c853b8fb"
+    }
+  ],
+  "presets": {
+    "full": [
+      "appropedia_en_all_maxi_2026-02.zim",
+      "devdocs_en_c_2026-10.zim",
+      "devdocs_en_cpp_2026-10.zim",
+      "devdocs_en_css_2026-10.zim",
+      "devdocs_en_html_2026-10.zim",
+      "devdocs_en_javascript_2026-10.zim",
+      "devdocs_en_man_2026-10.zim",
+      "devdocs_en_nextjs_2026-10.zim",
+      "devdocs_en_node_2026-08.zim",
+      "devdocs_en_python_2026-10.zim",
+      "devdocs_en_rust_2026-10.zim",
+      "devdocs_en_vue_2026-08.zim",
+      "gutenberg_en_all_2025-11.zim",
+      "ifixit_en_all_2025-12.zim",
+      "iot.stackexchange.com_en_all_2026-10.zim",
+      "libretexts.org_en_bio_2025-01.zim",
+      "libretexts.org_en_biz_2026-01.zim",
+      "libretexts.org_en_chem_2025-01.zim",
+      "libretexts.org_en_eng_2025-01.zim",
+      "libretexts.org_en_geo_2026-01.zim",
+      "libretexts.org_en_human_2026-07.zim",
+      "libretexts.org_en_k12_2026-01.zim",
+      "libretexts.org_en_math_2026-01.zim",
+      "libretexts.org_en_med_2025-01.zim",
+      "libretexts.org_en_phys_2026-01.zim",
+      "libretexts.org_en_socialsci_2025-01.zim",
+      "libretexts.org_en_stats_2026-01.zim",
+      "libretexts.org_en_workforce_2026-01.zim",
+      "maps_en_all_2026-06.zim",
+      "medlineplus.gov_en_all_2025-01.zim",
+      "minecraft.wiki_en_all_2026-08.zim",
+      "ready.gov_en_all_2026-10.zim",
+      "ted_mul_all_2026-09.zim",
+      "wikipedia_en_all_maxi_2026-08.zim",
+      "wikipedia_en_medicine_maxi_2026-10.zim",
+      "wikisource_en_all_maxi_2026-09.zim",
+      "wikispecies_en_all_maxi_2026-10.zim",
+      "wikivoyage_en_all_maxi_2026-09.zim",
+      "wiktionary_en_all_nopic_2026-11.zim"
+    ],
+    "partial": [
+      "appropedia_en_all_maxi_2026-02.zim",
+      "devdocs_en_c_2026-10.zim",
+      "devdocs_en_cpp_2026-10.zim",
+      "devdocs_en_css_2026-10.zim",
+      "devdocs_en_html_2026-10.zim",
+      "devdocs_en_javascript_2026-10.zim",
+      "devdocs_en_man_2026-10.zim",
+      "devdocs_en_nextjs_2026-10.zim",
+      "devdocs_en_node_2026-08.zim",
+      "devdocs_en_python_2026-10.zim",
+      "devdocs_en_rust_2026-10.zim",
+      "devdocs_en_vue_2026-08.zim",
+      "gutenberg_en_all_2025-11.zim",
+      "ifixit_en_all_2025-12.zim",
+      "iot.stackexchange.com_en_all_2026-10.zim",
+      "libretexts.org_en_bio_2025-01.zim",
+      "libretexts.org_en_biz_2026-01.zim",
+      "libretexts.org_en_chem_2025-01.zim",
+      "libretexts.org_en_eng_2025-01.zim",
+      "libretexts.org_en_geo_2026-01.zim",
+      "libretexts.org_en_human_2026-07.zim",
+      "libretexts.org_en_k12_2026-01.zim",
+      "libretexts.org_en_math_2026-01.zim",
+      "libretexts.org_en_med_2025-01.zim",
+      "libretexts.org_en_phys_2026-01.zim",
+      "libretexts.org_en_socialsci_2025-01.zim",
+      "libretexts.org_en_stats_2026-01.zim",
+      "libretexts.org_en_workforce_2026-01.zim",
+      "maps_en_all_2026-06.zim",
+      "medlineplus.gov_en_all_2025-01.zim",
+      "minecraft.wiki_en_all_2026-08.zim",
+      "ready.gov_en_all_2026-10.zim",
+      "wikipedia_en_all_maxi_2026-08.zim",
+      "wikipedia_en_medicine_maxi_2026-10.zim",
+      "wikisource_en_all_maxi_2026-09.zim",
+      "wikispecies_en_all_maxi_2026-10.zim",
+      "wikivoyage_en_all_maxi_2026-09.zim",
+      "wiktionary_en_all_nopic_2026-11.zim"
+    ],
+    "wikipedia": [
+      "wikipedia_en_all_maxi_2026-08.zim"
+    ]
+  }
+}
