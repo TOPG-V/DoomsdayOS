@@ -22,16 +22,7 @@ def main():
     print('Immutable ZIM destination:',cfg['zim_dir'])
     print('Staging destination:',cfg.get('staging_dir','(not configured)'))
     cfg['zim_dataset']=dataset_at(Path(cfg['zim_dir']))
-    bp=input('Optional ZIM backup directory on an independently backed-up disk (blank = none): ').strip()
-    if bp:
-        path=Path(bp)
-        if not path.is_absolute() or not path.is_dir(): print('Invalid path; backup remains disabled.')
-        else:
-            cfg['backup_dir']=str(path)
-            cfg['backup_dataset']=dataset_at(path)
-            separate=bool(cfg['backup_dataset'] and cfg['backup_dataset'].split('/')[0] != cfg.get('zim_dataset','').split('/')[0])
-            if not separate:print('WARNING: This backup shares the library pool or is not a separate ZFS dataset; auto-restore disabled.')
-            cfg['auto_restore_verified_zims']=separate and input('Allow automatic ZIM-only repair from a checksum-verified copy? [y/N]: ').lower().strip()=='y'
+    print('You can choose an OS-drive folder or another disk for optional ZIM backups in the download wizard.')
     atomic_json(CONF,cfg)
     print('\nConfigure Wi-Fi hotspot (optional):')
     wifi_manager.configure()
