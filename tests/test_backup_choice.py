@@ -100,6 +100,25 @@ class BackupChoiceTests(unittest.TestCase):
     def test_backup_destination_cannot_be_system_area(self):
         with self.assertRaises(ValueError):z._safe_backup_path('/etc/doomsday-backup',self.cfg)
 
+    def test_ext4_source_is_not_misidentified_as_zfs_pool(self):
+        with mock.patch.object(z,'dataset_at',return_value='/dev/sda2'):
+            ident=z._pool_identity(self.archive)
+        self.assertTrue(ident.startswith('device:'),ident)
+
+    def test_stale_partial_backup_file_is_preserved(self):
+        self.backup.mkdir()
+        source=self.root/'small.zim'
+        source.write_bytes(b'valid archive bytes')
+        partial=self.backup/(source.name+'.copying')
+        partial.write_bytes(b'partial must survive')
+        cfg={**self.cfg,'backup_dataset':'rpool/ROOT/os'}
+        with mock.patch.object(z,'dataset_at',return_value='rpool/ROOT/os'),\
+             mock.patch.object(z,'disk_free',return_value=100*GIB),\
+             mock.patch.object(z,'zfs_copies',return_value=1):
+            with self.assertRaisesRegex(ValueError,'unfinished'):
+                z.backup_zim(source,self.backup,cfg)
+        self.assertEqual(partial.read_bytes(),b'partial must survive')
+
 if __name__=='__main__':unittest.main()
 
 # These extra tests are deliberately top-level to exercise the same public
