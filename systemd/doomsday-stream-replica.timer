@@ -1,0 +1,10 @@
+[Unit]
+Description=Check fortnightly ZFS backup eligibility daily (run only when due and system idle)
+[Timer]
+OnBootSec=20min
+OnCalendar=*-*-* 04:15:00
+Persistent=true
+RandomizedDelaySec=40min
+Unit=doomsday-stream-replica.service
+[Install]
+WantedBy=timers.target

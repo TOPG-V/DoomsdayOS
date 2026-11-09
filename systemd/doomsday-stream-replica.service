@@ -1,0 +1,11 @@
+[Unit]
+Description=Stream Ubuntu ZFS snapshots directly to enrolled independent backup pool
+After=zfs-mount.service
+[Service]
+Type=oneshot
+ExecStart=/opt/doomsday-firstboot/scripts/stream-replica.sh
+Nice=19
+IOSchedulingClass=idle
+ExecCondition=/usr/bin/python3 /opt/doomsday-firstboot/app/backup_policy.py check external
+ExecStartPost=/usr/bin/python3 /opt/doomsday-firstboot/app/backup_policy.py mark external
+TimeoutStartSec=0

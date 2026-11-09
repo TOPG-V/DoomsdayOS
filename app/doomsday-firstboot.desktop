@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Doomsday Vault First-Boot Setup
+Comment=Choose Kiwix ZIM archives and configure optional hotspot
+Exec=/usr/local/bin/doomsday-firstboot-launch
+Terminal=false
+OnlyShowIn=GNOME;Unity;XFCE;
+X-GNOME-Autostart-enabled=true

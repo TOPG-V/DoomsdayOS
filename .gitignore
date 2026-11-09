@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.part
+*.zim
+*.iso
+*.log
+.env
+.secrets/

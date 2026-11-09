@@ -1,0 +1,10 @@
+[Unit]
+Description=Check local system backup eligibility daily (actual interval 14 days)
+[Timer]
+OnBootSec=25min
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=40min
+Unit=doomsday-backup.service
+[Install]
+WantedBy=timers.target

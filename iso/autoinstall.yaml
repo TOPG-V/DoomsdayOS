@@ -1,0 +1,10 @@
+# EXPERIMENTAL: Ubuntu Desktop 26.04 interactive autoinstall + first-boot payload.
+# Every installer screen including STORAGE must remain interactive. No target disk is preselected.
+autoinstall:
+  version: 1
+  interactive-sections: ['*']
+  late-commands:
+    - mkdir -p /target/opt/doomsday-firstboot /target/etc/systemd/system
+    - cp -a /cdrom/doomsday-vault/. /target/opt/doomsday-firstboot/
+    - cp /cdrom/doomsday-vault/systemd/doomsday-bootstrap.service /target/etc/systemd/system/doomsday-bootstrap.service
+    - curtin in-target -- systemctl enable doomsday-bootstrap.service

@@ -1,0 +1,8 @@
+[Unit]
+Description=Doomsday Vault external storage and Wi-Fi hardware recheck
+After=NetworkManager.service zfs-mount.service
+Wants=NetworkManager.service
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/hardware_recheck.py
+Nice=10

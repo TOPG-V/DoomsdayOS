@@ -1,0 +1,11 @@
+[Unit]
+Description=Doomsday Vault safe first boot services installation
+After=network-online.target zfs-mount.service
+Wants=network-online.target
+ConditionPathExists=!/var/lib/doomsday-vault/bootstrap-complete
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/doomsday-firstboot/install.sh --bootstrap
+TimeoutStartSec=0
+[Install]
+WantedBy=multi-user.target

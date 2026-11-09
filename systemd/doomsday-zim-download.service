@@ -1,0 +1,12 @@
+[Unit]
+Description=Resume SHA-verified Kiwix ZIM downloads
+Wants=network-online.target
+After=network-online.target doomsday-zim-protect.service
+Wants=doomsday-zim-protect.service
+ConditionPathExists=/var/lib/doomsday-vault/zim-queue.json
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/zim_manager.py run
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=0

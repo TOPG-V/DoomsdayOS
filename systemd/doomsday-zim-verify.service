@@ -1,0 +1,12 @@
+[Unit]
+Description=Verify signed-checksum ZIM archive manifest (read only)
+After=doomsday-zim-protect.service zfs-mount.service
+ConditionPathExists=/var/lib/doomsday-vault/zim-manifest.json
+[Service]
+Type=oneshot
+ExecCondition=/usr/bin/python3 /opt/doomsday-firstboot/app/backup_policy.py check zim-verify
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/archive_guard.py verify
+ExecStartPost=/usr/bin/python3 /opt/doomsday-firstboot/app/backup_policy.py mark zim-verify
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=0

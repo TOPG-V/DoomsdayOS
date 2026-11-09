@@ -1,0 +1,9 @@
+[Unit]
+Description=Recheck removable ZFS storage and Wi-Fi dongles
+[Timer]
+OnBootSec=75s
+OnUnitInactiveSec=2min
+Persistent=true
+Unit=doomsday-hardware-recheck.service
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=Kiwix offline knowledge library on local network
+After=network.target zfs-mount.service doomsday-zim-protect.service
+Wants=doomsday-zim-protect.service
+Wants=network.target
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/serve_zims.py
+Restart=on-failure
+RestartSec=60
+ProtectSystem=full
+NoNewPrivileges=yes
+[Install]
+WantedBy=multi-user.target

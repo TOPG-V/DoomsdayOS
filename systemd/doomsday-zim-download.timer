@@ -1,0 +1,9 @@
+[Unit]
+Description=Retry incomplete ZIM downloads following interruptions
+[Timer]
+OnBootSec=90s
+OnUnitInactiveSec=10min
+Persistent=true
+Unit=doomsday-zim-download.service
+[Install]
+WantedBy=timers.target

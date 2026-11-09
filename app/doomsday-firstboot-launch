@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# XDG graphical session only. This will prompt for sudo in the terminal, not execute silently.
+[[ -e /usr/share/doomsday-vault/setup-complete ]] && exit 0
+command -v gnome-terminal >/dev/null || exit 0
+gnome-terminal -- bash -lc 'echo "Doomsday Vault setup (sudo password needed):"; sudo /usr/local/bin/doomsday-setup; echo "Press Enter to close"; read -r' &

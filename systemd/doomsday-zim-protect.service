@@ -1,0 +1,11 @@
+[Unit]
+Description=Enforce read-only verified ZIM archive library
+After=zfs-mount.service
+Before=doomsday-kiwix.service doomsday-zim-download.service
+ConditionPathExists=/etc/doomsday-vault/firstboot.json
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/archive_guard.py protect
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target

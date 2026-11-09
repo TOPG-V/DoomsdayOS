@@ -1,0 +1,10 @@
+[Unit]
+Description=Fortnightly ZIM integrity audit eligibility
+[Timer]
+OnBootSec=2h
+OnCalendar=*-*-* 05:15:00
+Persistent=true
+RandomizedDelaySec=45min
+Unit=doomsday-zim-verify.service
+[Install]
+WantedBy=timers.target
