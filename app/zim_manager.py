@@ -15,6 +15,8 @@ HOSTS = ('download.kiwix.org', 'mirror.download.kiwix.org')
 UA = 'DoomsdayVault/3 (offline archive downloader)'
 CHUNK = 1024 * 1024
 RESERVE = 3 * 1024**3
+OS_BACKUP_RESERVE = 20 * 1024**3
+DEFAULT_OS_BACKUP_DIR = Path("/var/lib/doomsday-vault/zim-backups")
 BUNDLE_MANIFEST = Path(__file__).with_name('bundle_manifest.json')
 
 
@@ -125,7 +127,11 @@ def fetch_checksum(url):
     return m.group(1).lower()
 
 def _catalog_url(href):
-    """Normalize official .zim.meta4 OPDS references to the corresponding .zim."""
+    """Normalize OPDS .zim.meta4 acquisition references to the actual ZIM.
+
+    Kiwix routinely uses a .zim.meta4 link even when advertising type
+    application/x-zim.  The downloader needs the .zim bytes, not the metalink.
+    """
     parsed = urllib.parse.urlsplit(href)
     path = parsed.path
     if path.lower().endswith('.zim.meta4'):
@@ -153,6 +159,7 @@ def parse_catalog(xml):
             url=_catalog_url(href)
             if not url:
                 continue
+            # Prefer an explicit direct .zim over a normalized .zim.meta4 link.
             direct=urllib.parse.urlsplit(href).path.lower().endswith('.zim')
             options.append((not direct,link,url))
         if not options:
@@ -160,12 +167,16 @@ def parse_catalog(xml):
         options.sort(key=lambda option:option[0])
         _,link,url=options[0]
         size=0
+        # Prefer entry-level zimSize: a .meta4 link's 'length' is sometimes
+        # just the size of the metalink file, not the archive itself.
         for node in entry.iter():
             key=node.tag.rsplit('}',1)[-1].lower()
             if key in ('zimsize','filesize') and node.text:
                 with contextlib.suppress(ValueError,TypeError):
                     size=max(size,int(node.text.strip()))
         if not size:
+            # Older catalog entries use the link 'length' for actual ZIM bytes.
+            # Ignore suspiciously tiny values of normalized metalink links.
             with contextlib.suppress(ValueError,TypeError):
                 link_bytes=int(link.get('length','0'))
                 if link_bytes >= 1024*1024 or urllib.parse.urlsplit(link.get('href','')).path.lower().endswith('.zim'):
@@ -175,7 +186,8 @@ def parse_catalog(xml):
 
 
 def catalog(search='',limit=100,fetcher=None):
-    # Advance across pages even if a given page has no title matches.
+    # Catalog endpoint is paginated. Filter the entries after parsing, and
+    # advance even when none of a particular page match a title search.
     items=[];seen=set(); start=0;count=100
     fetcher=fetcher or (lambda url:request(url,timeout=45).read())
     while len(items)<limit and start<10000:
@@ -196,12 +208,24 @@ def catalog(search='',limit=100,fetcher=None):
     return items
 
 def enqueue(items):
+    """Update backup choices even for already installed ZIMs, without deleting copies."""
     with locked_queue():
-        q=read_queue(); existing={x['url'] for x in q}
+        q=read_queue()
+        old_by_url={x['url']:x for x in q}
         for item in items:
             safe_url(item['url'])
-            if item['url'] in existing:continue
-            q.append({**item,'backup':bool(item.get('backup',False)),'status':'pending','error':''})
+            requested=bool(item.get('backup',False))
+            if item['url'] in old_by_url:
+                old=old_by_url[item['url']]
+                old['backup']=requested
+                if requested and old.get('status')=='done':
+                    # Revisit the already verified archive and sync to any new backup folder.
+                    old['status']='downloaded'
+                if not requested:old['backup_result']='excluded-by-user'
+                continue
+            row={**item,'backup':requested,'status':'pending','error':''}
+            if not requested:row['backup_result']='excluded-by-user'
+            q.append(row)
         atomic_json(queue_path(),q)
 
 def sha256(path):
@@ -272,19 +296,190 @@ def download(item, dst, opener=request):
     os.replace(part,final);meta.unlink(missing_ok=True)
     return final
 
-def backup_zim(source,backupdir):
+def _safe_backup_path(value, cfg, os_folder=False):
+    """Validate a directory with no symlink traversal or archive/staging overlap.
+
+    The path may not exist yet, but the nearest existing ancestor MUST exist and
+    be on the OS pool if this is the OS-folder option. Creation is postponed
+    until after the final YES confirmation.
+    """
+    path=Path(value).expanduser()
+    if not path.is_absolute() or '..' in path.parts or str(path)=='/':
+        raise ValueError('Enter an absolute dedicated backup folder, not /')
+    if any(path==Path(x) or path.is_relative_to(Path(x)) for x in
+           ('/proc','/sys','/dev','/run','/boot','/etc','/usr','/opt','/tmp','/var/tmp')):
+        raise ValueError('Backup folder must not be inside a protected OS directory')
+    for other in (cfg.get('zim_dir'),cfg.get('staging_dir')):
+        if other:
+            o=Path(other).resolve(strict=False)
+            q=path.resolve(strict=False)
+            if o==q or o.is_relative_to(q) or q.is_relative_to(o):
+                raise ValueError('Backup folder cannot overlap the live ZIM library or staging area')
+    # Refuse symlink redirection even in a parent directory.
+    for component in (path,*path.parents):
+        if component.is_symlink():raise ValueError('Symlinked backup paths are not supported')
+    ancestor=path
+    while not ancestor.exists():
+        ancestor=ancestor.parent
+    if not ancestor.is_dir():raise ValueError('Backup parent is not a directory')
+    if path.exists() and not path.is_dir():raise ValueError('Backup path is not a directory')
+    src=dataset_at(ancestor)
+    if not src:raise ValueError('Backup parent storage is not mounted')
+    if os_folder:
+        root_source=dataset_at(Path('/'))
+        if (not root_source or src.split('/')[0]!=root_source.split('/')[0] or
+                not src.startswith(root_source.split('/')[0]+'/')):
+            # Also works for a conventional non-ZFS root such as /dev/sda2.
+            if not (src==root_source and ancestor.stat().st_dev==Path('/').stat().st_dev):
+                raise ValueError('This is not a folder on the OS filesystem/pool')
+    return path,ancestor,src
+
+
+def _backup_destination(cfg, input_fn=input):
+    """Collect an optional backup destination without changing anything yet."""
+    old=cfg.get('backup_dir','')
+    print('\nBACKUP LOCATION (optional):')
+    print('1) Keep current location: '+(old or 'none'))
+    print('2) Choose a folder on the OS drive')
+    print('3) Choose an existing folder on another mounted drive')
+    print('4) Do not make ZIM backups')
+    choice=input_fn('Select 1/2/3/4 (Enter = 1): ').strip() or '1'
+    if choice=='4':return '', '', False
+    if choice=='1':
+        if not old:return '', '', False
+        path,_,src=_safe_backup_path(old,cfg)
+        return str(path),src,src.split('/')[0]==dataset_at(Path('/')).split('/')[0]
+    if choice=='2':
+        value=input_fn(f'OS backup folder (Enter = {DEFAULT_OS_BACKUP_DIR}): ').strip()
+        path,_,src=_safe_backup_path(value or str(DEFAULT_OS_BACKUP_DIR),cfg,os_folder=True)
+        print('WARNING: Same physical OS drive is NOT an independent backup!')
+        print('It cannot protect against total disk failure, and may fill the OS disk.')
+        return str(path),src,True
+    if choice=='3':
+        value=input_fn('Existing mounted backup directory (absolute path): ').strip()
+        path,_,src=_safe_backup_path(value,cfg)
+        if not path.is_dir():raise ValueError('External destination must already exist and be mounted')
+        independent=is_separate_physical_pool(Path(cfg['zim_dir']),path)
+        if not independent:
+            print('WARNING: This location is not independently verified as another physical drive.')
+        return str(path),src,src.split('/')[0]==dataset_at(Path('/')).split('/')[0]
+    raise ValueError('Choose 1, 2, 3 or 4')
+
+
+def _pool_identity(path):
+    """ZFS datasets in the same pool share capacity; otherwise identify filesystem."""
+    src=dataset_at(path)
+    if src and ('/' in src or src in ('rpool','bpool','tank')):
+        return 'zfs:'+src.split('/')[0]
+    try:return 'device:'+str(Path(path).stat().st_dev)
+    except OSError:return 'mount:'+src
+
+
+def _backup_capacity(selected, backup_path, backup_probe, plan, archive, stage,
+                     archive_free, stage_free, cfg):
+    """Bytes available for ADDITIONAL backups after primary archive staging peak."""
+    backup_pool=_pool_identity(backup_probe)
+    root_pool=_pool_identity(Path('/'))
+    is_os=backup_pool==root_pool
+    reserve=OS_BACKUP_RESERVE if is_os else RESERVE
+    if backup_pool==_pool_identity(archive):
+        budget=archive_free-plan['required_final']-reserve
+    elif backup_pool==_pool_identity(stage):
+        budget=stage_free-plan['required_stage']-reserve
+    else:
+        budget=disk_free(backup_probe)-reserve
+    copies=zfs_copies(backup_probe)
+    requested=sum(int(x.get('size') or 0)*copies for x in selected)
+    return {'available':max(0,budget),'need':requested,'copies':copies,
+            'reserve':reserve,'shares_archive':backup_pool==_pool_identity(archive),
+            'on_os':is_os}
+
+
+def _parse_numbers(text, count):
+    parts=[t.strip() for t in text.split(',')]
+    if not parts or any(not t.isdecimal() for t in parts):
+        raise ValueError('Use comma-separated numbers like 1,3,7')
+    nums={int(t) for t in parts}
+    if any(n<1 or n>count for n in nums):
+        raise ValueError('Selected ZIM number is out of range')
+    return nums
+
+
+def _select_backups(chosen, cfg, backup_path, backup_src, plan, dst, stage,
+                    avail, stage_free, input_fn=input):
+    """Never silently exclude archives; user picks precisely which to copy."""
+    chosen=[dict(x) for x in chosen]
+    if not backup_path:
+        print('Backup copies: none selected. Main read-only ZIMs will still download.')
+        return chosen
+    backup=Path(backup_path)
+    _,probe,src=_safe_backup_path(backup,cfg)
+    if src!=backup_src:raise ValueError('Backup filesystem changed while choosing')
+    print('\nSELECT ZIM BACKUPS (originals stay downloaded regardless):')
+    for i,x in enumerate(chosen,1):
+        print(f' {i:>2}. {x["title"][:65]} ({size_text(int(x.get("size") or 0))})')
+    print('Enter all, none, numbers like 1,3, or "exclude 2,5" to back up all EXCEPT 2 and 5.')
+    count=len(chosen)
+    raw=input_fn('Back up which ZIMs? (Enter = none): ').strip().lower()
+    def initial(raw):
+        if raw in ('none','', 'skip'):return set()
+        if raw=='all':return set(range(1,count+1))
+        if raw.startswith('exclude '):return set(range(1,count+1))-_parse_numbers(raw[8:],count)
+        return _parse_numbers(raw,count)
+    try:nums=initial(raw)
+    except ValueError as e:
+        print('Invalid ZIM backup selection:',e,'Nothing queued.')
+        return None
+    while True:
+        selected=[chosen[i-1] for i in sorted(nums)]
+        budget=_backup_capacity(selected,backup,probe,plan,dst,stage,avail,stage_free,cfg)
+        if budget['need']<=budget['available']:
+            print(f'Backup copies selected: {len(selected)}/{count}; estimated {size_text(budget["need"])}; available for backups {size_text(budget["available"])}.')
+            break
+        deficit=budget['need']-budget['available']
+        print(f'INSUFFICIENT BACKUP SPACE: need {size_text(budget["need"])};')
+        print(f'available for extra copies: {size_text(budget["available"])}; shortage {size_text(deficit)}.')
+        if budget['shares_archive']:
+            print('This folder shares space with the original ZIMs and temporary downloads.')
+        print('Exclude some ZIM backup copies; original downloads are not removed.')
+        decision=input_fn('Numbers to EXCLUDE from backups, "none" for no backups, or Enter to cancel: ').strip().lower()
+        if decision=='':return None
+        if decision=='none':nums=set();continue
+        try:excluded=_parse_numbers(decision.replace('exclude ','',1),count)
+        except ValueError as e:
+            print('Invalid exclusion:',e);continue
+        nums-=excluded
+    for i,x in enumerate(chosen,1):x['backup']=i in nums
+    if nums and budget['on_os']:
+        print('IMPORTANT: OS-folder backup is on the system pool/drive; keep a separate physical copy for disaster recovery.')
+    if len(nums)<count:
+        print(f'{count-len(nums)} ZIM(s) excluded from backups; all remain in the original ZIM package.')
+    print('Excluding a ZIM does not delete an older backup copy already on disk.')
+    return chosen
+
+
+def backup_zim(source,backupdir, cfg=None):
     if not backupdir:return 'none'
+    cfg=cfg or config()
     backupdir=Path(backupdir)
     if not backupdir.is_dir():raise ValueError('Backup storage missing; will retry after reconnect')
-    guard_path(backupdir)
+    _,_,src=_safe_backup_path(backupdir,cfg)
+    expected=cfg.get('backup_dataset','')
+    if not expected or src!=expected:
+        raise ValueError('Backup filesystem changed; refusing to write to an unknown disk')
+    guard_path(backupdir,expected)
     target=backupdir/source.name
     srcsum=sha256(source)
     if target.exists() and sha256(target)==srcsum:return 'verified-existing'
     if target.exists():raise ValueError('Backup filename exists with incorrect checksum; refusing overwrite')
-    required=source.stat().st_size*zfs_copies(backupdir)+RESERVE
-    if disk_free(backupdir)<required:raise ValueError('Backup destination lacks capacity')
+    reserve=OS_BACKUP_RESERVE if _pool_identity(backupdir)==_pool_identity(Path('/')) else RESERVE
+    required=source.stat().st_size*zfs_copies(backupdir)+reserve
+    if disk_free(backupdir)<required:
+        raise ValueError(f'INSUFFICIENT BACKUP SPACE: need {size_text(required)}, available {size_text(disk_free(backupdir))}. Original preserved.')
     part=backupdir/(source.name+'.copying')
-    with open(source,'rb') as a,open(part,'wb') as b:
+    if part.exists():
+        part.unlink()  # Only a stale temporary copy with this exact filename.
+    with open(source,'rb') as a,open(part,'xb') as b:
         shutil.copyfileobj(a,b,4*CHUNK);b.flush();os.fsync(b.fileno())
     if sha256(part)!=srcsum:raise ValueError('Backup verification failed')
     os.replace(part,target)
@@ -326,8 +521,9 @@ def run_queue():
                 item['status']='downloaded';atomic_json(queue_path(),q)
                 if item.get('backup') and backupdir:
                     guard_path(Path(backupdir),cfg.get('backup_dataset',''))
-                    item['backup_result']=backup_zim(out,backupdir)
+                    item['backup_result']=backup_zim(out,backupdir,cfg)
                 elif item.get('backup'):item['backup_result']='deferred-no-backup-drive'
+                else:item['backup_result']='excluded-by-user'
                 item['status']='done';item['error']=''
             except Exception as e:
                 item['status']='retry';item['error']=str(e)[:600]
@@ -397,7 +593,7 @@ def interactive_catalog_wizard(input_fn=input, fetch=None):
     print('\nDoomsday ZIM Library — choose archives one by one or all from a filtered catalog.')
     print('Full Kiwix catalog may exceed available storage. No downloads start until you confirm.')
     term=input_fn('Search titles (e.g. Wikipedia, medical; Enter = browse first 100; ALL = browse): ').strip()
-    if term.casefold()=='all':term=''
+    if term.casefold()=='all':term=''  # Common expectation: all means browse, not search for 'all'.
     try:items=catalog(term,limit=100,fetcher=fetch)
     except Exception as e:
         print('Catalog unavailable:',e,'\nYou can rerun setup later when online.');return []
@@ -425,8 +621,21 @@ def _storage_estimate(chosen, dst, stage, final_copies, staging_copies):
     not the entire catalog, determines temporary space.
     """
     payload=sum(int(x.get('size') or 0) for x in chosen)
-    largest=max((int(x.get('size') or 0) for x in chosen),default=0)
-    final_bytes=payload*final_copies
+    # Already published archives do not need downloading or restaging.
+    # The worker still verifies their actual SHA-256 before trusting them.
+    pending=[]
+    already=0
+    for x in chosen:
+        filename=Path(urllib.parse.urlsplit(x.get('url','')).path).name
+        installed=Path(dst)/filename
+        try:
+            exists=(installed.is_file() and installed.stat().st_size==int(x.get('size') or 0))
+        except (OSError,ValueError,TypeError):exists=False
+        if exists:already+=1
+        else:pending.append(x)
+    new_payload=sum(int(x.get('size') or 0) for x in pending)
+    largest=max((int(x.get('size') or 0) for x in pending),default=0)
+    final_bytes=new_payload*final_copies
     staging_bytes=largest*staging_copies
     dst_pool=dataset_at(dst).split('/')[0]
     stage_pool=dataset_at(stage).split('/')[0]
@@ -434,7 +643,8 @@ def _storage_estimate(chosen, dst, stage, final_copies, staging_copies):
     required_final=final_bytes+(staging_bytes if same_pool else 0)+RESERVE
     required_stage=(staging_bytes+RESERVE) if not same_pool else required_final
     return {
-        'payload':payload,'largest':largest,'final_bytes':final_bytes,
+        'payload':payload,'new_payload':new_payload,'already_present':already,
+        'largest':largest,'final_bytes':final_bytes,
         'staging_bytes':staging_bytes,'same_pool':same_pool,
         'required_final':required_final,'required_stage':required_stage,
     }
@@ -490,6 +700,8 @@ def queue_chosen(chosen, input_fn=input, all_selected=False):
     unknown=[x for x in chosen if not x.get('size')]
     plan=_storage_estimate(chosen,dst,stage,factor,stage_copies)
     print(f'Actual download size: {plan["payload"]/1e9:,.1f} GB ({size_text(plan["payload"])}).')
+    if plan['already_present']:
+        print(f'Already present: {plan["already_present"]} ZIM(s); new downloads estimated: {size_text(plan["new_payload"])}.')
     print(f'ZFS archive copies={factor}, staging copies={stage_copies}.')
     print(f'Final ZIM storage estimate: {size_text(plan["final_bytes"])};')
     print(f'Largest temporary staged ZIM: {size_text(plan["staging_bytes"])}.')
@@ -503,6 +715,12 @@ def queue_chosen(chosen, input_fn=input, all_selected=False):
     insufficient=plan['required_final']>avail or plan['required_stage']>stage_free
     lower_copies=False
     if insufficient:
+        if plan['required_final']>avail:
+            print(f'INSUFFICIENT SPACE FOR ORIGINAL ZIMS: need {size_text(plan["required_final"])},'
+                  f' free {size_text(avail)}, shortage {size_text(plan["required_final"]-avail)}.')
+        if plan['required_stage']>stage_free and not plan['same_pool']:
+            print(f'INSUFFICIENT TEMPORARY STAGING SPACE: need {size_text(plan["required_stage"])},'
+                  f' free {size_text(stage_free)}.')
         # The two-copy preservation default can make the 575 GB bundle require
         # about 1.6 TB peak. Offer a one-copy option, never an implicit change.
         efficient=_storage_estimate(chosen,dst,stage,1,1)
@@ -524,27 +742,18 @@ def queue_chosen(chosen, input_fn=input, all_selected=False):
         else:
             print('Insufficient free space even with safe/available storage choices. Nothing queued.')
             return []
-    bdir=cfg.get('backup_dir')
-    if bdir:
-        bd=Path(bdir);bfree=disk_free(bd);bf=zfs_copies(bd)
-        print(f'Backup drive: {size_text(bfree)} free, ~{size_text(sum(x["size"] for x in chosen)*bf)} for all selected.')
-        if not is_separate_physical_pool(dst,bd):print('WARNING: Backup is on same ZFS pool; not independent against pool failure.')
-        bc=input_fn('Which ZIMs to back up? Numbers in the SELECTED list, all, none: ').strip().lower()
-        if bc=='all':candidates=list(range(1,len(chosen)+1))
-        elif bc in ('','none','skip'):candidates=[]
-        else:
-            try:candidates=[int(s.strip()) for s in bc.split(',')]
-            except ValueError:candidates=[]
-        candidates=[n for n in dict.fromkeys(candidates) if 1<=n<=len(chosen)]
-        remaining=bfree-RESERVE
-        for n in candidates:
-            it=chosen[n-1]
-            cost=it['size']*bf
-            if it['size']==0:
-                print('Unknown backup size, deferred:',it['title']);continue
-            if cost<=remaining:it['backup']=True;remaining-=cost
-            else:print('Not enough backup space for:',it['title'])
-    else:print('No independent ZIM backup destination configured. ZFS block copies and snapshots are not separate backups.')
+    # Backup copies are optional and never interfere with the original archive.
+    # Destination selection and exclusions are staged until the final YES.
+    try:
+        bdir,backup_src,backup_on_os=_backup_destination(cfg,input_fn)
+    except (OSError,ValueError) as e:
+        print('Invalid backup location:',e,'Nothing queued.');return []
+    try:
+        selected=_select_backups(chosen,cfg,bdir,backup_src,plan,dst,stage,avail,stage_free,input_fn)
+    except (OSError,ValueError) as e:
+        print('Cannot plan ZIM backups:',e,'Nothing queued.');return []
+    if selected is None:return []
+    chosen=selected
     confirm=input_fn('Queue these '+str(len(chosen))+' archive(s) for SHA-verified resumable download? type YES: ')
     if confirm!='YES':
         print('Nothing changed or queued.')
@@ -556,6 +765,25 @@ def queue_chosen(chosen, input_fn=input, all_selected=False):
         if updated['required_final']>disk_free(dst) or updated['required_stage']>disk_free(stage):
             print('Capacity changed or ZFS property not applied; nothing queued.')
             return []
+    if bdir:
+        try:
+            p,probe,source=_safe_backup_path(bdir,cfg,os_folder=backup_on_os)
+            if source!=backup_src:raise ValueError('Selected backup mount changed')
+            if not p.exists():
+                p.mkdir(parents=True,mode=0o700)
+            checked,_,live_src=_safe_backup_path(p,cfg,os_folder=backup_on_os)
+            if live_src!=backup_src:raise ValueError('Selected backup location changed after creation')
+            cfg['backup_dir']=str(checked)
+            cfg['backup_dataset']=live_src
+        except (OSError,ValueError) as e:
+            print('Failed to prepare backup folder:',e,'Nothing queued.');return []
+    else:
+        cfg['backup_dir']=''
+        cfg['backup_dataset']=''
+    # Independent auto-repair is unsafe if a user changes to OS-folder backups.
+    if (backup_on_os or not bdir or not is_separate_physical_pool(dst,Path(bdir))):
+        cfg['auto_restore_verified_zims']=False
+    atomic_json(CONF,cfg)
     enqueue(chosen)
     print('Queued. Automatic timer resumes downloads after power interruption.')
     return chosen
@@ -567,7 +795,12 @@ def main():
     elif a.command=='browse':interactive_catalog_wizard()
     elif a.command=='run':run_queue()
     elif a.command=='status':
-        for x in read_queue():print(x['status'],x['title'],x.get('error',''))
+        cfg=config()
+        print('Backup destination:',cfg.get('backup_dir') or 'none')
+        for x in read_queue():
+            print(x['status'],x['title'],
+                  'backup='+('selected' if x.get('backup') else 'excluded'),
+                  x.get('backup_result',''),x.get('error',''))
     elif a.command=='enqueue-url':
         if not a.url or not a.sha256: p.error('--url and --sha256 required')
         enqueue([{'id':a.url,'title':Path(urllib.parse.urlsplit(a.url).path).name,'url':a.url,'size':a.size,'sha256':a.sha256,'backup':False}])
