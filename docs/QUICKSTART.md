@@ -26,7 +26,7 @@ The installed scripts live in `/opt/doomsday-firstboot` and `/usr/local/lib/doom
 sudo doomsday-setup
 ```
 
-Enter a catalog filter (blank for the first 100), review the numbered list, then choose `1,3,5`, `all`, or `skip`. The downloader first checks free space; select backup copies individually if the second disk has limited capacity. No actual downloading starts without typing `YES`. Existing verified ZIMs stay read-only on their own filesystem.
+Choose preset `1` Full (~575 GB), `2` Partial without TED (~484 GB), or `3` Wikipedia Only (~127 GB). The wizard first checks original storage. Then choose no backup, a **folder on the OS drive**, or an existing directory on another drive. Use `exclude 13,29,33` to omit those **backup copies** while keeping the originals. If backup space is insufficient, the wizard reports the deficit and lets you exclude more numbers. Nothing downloads without a final `YES`. Existing verified ZIMs stay read-only on their own filesystem. For arbitrary ZIM selection instead of the presets, use `sudo doomsday-zims browse`.
 
 ```bash
 sudo doomsday-zims status
