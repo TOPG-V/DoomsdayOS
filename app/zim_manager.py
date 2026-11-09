@@ -417,25 +417,116 @@ def interactive_catalog_wizard(input_fn=input, fetch=None):
         except (ValueError,IndexError):print('Invalid selection');return []
     return queue_chosen(chosen, input_fn=input_fn, all_selected=(sel=='all'))
 
+def _storage_estimate(chosen, dst, stage, final_copies, staging_copies):
+    """Estimate peak ZFS space while publishing one file at a time.
+
+    A downloaded .zim is staged once, verified, copied to the immutable
+    destination, then its staged copy is removed. Therefore the largest ZIM,
+    not the entire catalog, determines temporary space.
+    """
+    payload=sum(int(x.get('size') or 0) for x in chosen)
+    largest=max((int(x.get('size') or 0) for x in chosen),default=0)
+    final_bytes=payload*final_copies
+    staging_bytes=largest*staging_copies
+    dst_pool=dataset_at(dst).split('/')[0]
+    stage_pool=dataset_at(stage).split('/')[0]
+    same_pool=bool(dst_pool and dst_pool==stage_pool)
+    required_final=final_bytes+(staging_bytes if same_pool else 0)+RESERVE
+    required_stage=(staging_bytes+RESERVE) if not same_pool else required_final
+    return {
+        'payload':payload,'largest':largest,'final_bytes':final_bytes,
+        'staging_bytes':staging_bytes,'same_pool':same_pool,
+        'required_final':required_final,'required_stage':required_stage,
+    }
+
+
+def _enable_single_copy_for_zims(cfg):
+    """Only after explicit typed consent; NEVER change system/boot datasets.
+
+    ZFS copies=1 affects future writes. Existing blocks keep their old copies,
+    and ZFS snapshots / an external backup remain the user's responsibility.
+    """
+    if os.geteuid()!=0:
+        raise RuntimeError('Changing ZFS copies requires root: sudo doomsday-zims wizard')
+    from archive_guard import checked_archive, stage_dir
+    _,archive_ds=checked_archive(cfg)
+    stage_dir(cfg)
+    staging_ds=cfg['staging_dataset']
+    root_ds=dataset_at(Path('/'))
+    boot_ds=dataset_at(Path('/boot'))
+    targets=list(dict.fromkeys([archive_ds,staging_ds]))
+    for ds in targets:
+        if ('/' not in ds or ds in (root_ds,boot_ds) or
+                ds.endswith('/ROOT') or '/ROOT/' in ds or '/BOOT/' in ds):
+            raise RuntimeError('Refusing to modify copies on an OS, boot or pool-root dataset: '+ds)
+    before={}
+    for ds in targets:
+        result=subprocess.run(['zfs','get','-H','-o','value','copies',ds],capture_output=True,text=True)
+        if result.returncode or result.stdout.strip() not in ('1','2','3'):
+            raise RuntimeError('Unable to verify current ZFS copies for '+ds)
+        before[ds]=result.stdout.strip()
+    changed=[]
+    try:
+        for ds,old in before.items():
+            if old=='1':continue
+            result=subprocess.run(['zfs','set','copies=1',ds],capture_output=True,text=True)
+            if result.returncode:
+                raise RuntimeError('ZFS rejected copies=1 for '+ds+': '+result.stderr.strip())
+            changed.append(ds)
+    except Exception:
+        # Best-effort restore of the previous setting if a later dataset fails.
+        for ds in reversed(changed):
+            subprocess.run(['zfs','set','copies='+before[ds],ds],capture_output=True,text=True)
+        raise
+    print('Space-saving mode enabled for future ZIM/archive staging writes only.')
+    print('Existing ZIM blocks are not rewritten. OS/boot copies are unchanged.')
+
+
 def queue_chosen(chosen, input_fn=input, all_selected=False):
     if not chosen:return []
-    cfg=config();dst=Path(cfg['zim_dir']);avail=disk_free(dst);factor=zfs_copies(dst)
-    unknown=[x for x in chosen if not x['size']]
-    total=sum(x['size'] for x in chosen if x['size'])*factor
-    stage=Path(cfg.get('staging_dir',cfg['zim_dir']))
-    stage_free=disk_free(stage); stage_copies=zfs_copies(stage)
-    biggest=max((x['size'] for x in chosen), default=0)
-    peak=total+biggest*stage_copies+RESERVE if (dataset_at(stage).split('/')[0]==dataset_at(dst).split('/')[0]) else total+RESERVE
-    print(f'Final archives estimate: {size_text(total)}; temporary staging max ~{size_text(biggest*stage_copies)}; current pool free {size_text(avail)}.')
+    cfg=config();dst=Path(cfg['zim_dir']);stage=Path(cfg.get('staging_dir',cfg['zim_dir']))
+    avail=disk_free(dst);stage_free=disk_free(stage)
+    factor=zfs_copies(dst);stage_copies=zfs_copies(stage)
+    unknown=[x for x in chosen if not x.get('size')]
+    plan=_storage_estimate(chosen,dst,stage,factor,stage_copies)
+    print(f'Actual download size: {plan["payload"]/1e9:,.1f} GB ({size_text(plan["payload"])}).')
+    print(f'ZFS archive copies={factor}, staging copies={stage_copies}.')
+    print(f'Final ZIM storage estimate: {size_text(plan["final_bytes"])};')
+    print(f'Largest temporary staged ZIM: {size_text(plan["staging_bytes"])}.')
+    if plan['same_pool']:
+        print(f'Estimated peak on the same pool including {size_text(RESERVE)} reserve: {size_text(plan["required_final"])}; free: {size_text(avail)}.')
+    else:
+        print(f'Archive pool needs {size_text(plan["required_final"])} (free {size_text(avail)}); staging pool needs {size_text(plan["required_stage"])} (free {size_text(stage_free)}).')
     if unknown:
-        print('Unknown sizes: cannot safely select all until sizes are determined. Choose individually or obtain sizes first.')
+        print('Unknown ZIM sizes: cannot safely select all until sizes are determined.')
         if all_selected:return []
-    if peak>avail or biggest*stage_copies+RESERVE>stage_free:
-        print('Insufficient free space for archive + temporary staging at peak. Choose a smaller set. Nothing queued.')
-        return []
+    insufficient=plan['required_final']>avail or plan['required_stage']>stage_free
+    lower_copies=False
+    if insufficient:
+        # The two-copy preservation default can make the 575 GB bundle require
+        # about 1.6 TB peak. Offer a one-copy option, never an implicit change.
+        efficient=_storage_estimate(chosen,dst,stage,1,1)
+        eligible=bool(cfg.get('zim_dataset') and cfg.get('staging_dataset'))
+        would_fit=(efficient['required_final']<=avail and efficient['required_stage']<=stage_free)
+        if eligible and would_fit and (factor>1 or stage_copies>1) and not unknown:
+            print(f'OPTIONAL SPACE-SAVING MODE: peak would be ~{size_text(efficient["required_final"])} on archive pool')
+            if not efficient['same_pool']:
+                print(f'and ~{size_text(efficient["required_stage"])} on staging pool.')
+            print('This changes only the dedicated ZIM and staging datasets to copies=1 for FUTURE WRITES.')
+            print('It REDUCES protection against damaged blocks. Keep a verified independent backup.')
+            consent=input_fn('Type SINGLE COPY to opt in, or Enter to cancel: ').strip()
+            if consent!='SINGLE COPY':
+                print('Preserving copies settings. Nothing queued.')
+                return []
+            lower_copies=True
+            factor=stage_copies=1
+            plan=efficient
+        else:
+            print('Insufficient free space even with safe/available storage choices. Nothing queued.')
+            return []
     bdir=cfg.get('backup_dir')
     if bdir:
-        bd=Path(bdir); bfree=disk_free(bd); bf=zfs_copies(bd)
+        bd=Path(bdir);bfree=disk_free(bd);bf=zfs_copies(bd)
         print(f'Backup drive: {size_text(bfree)} free, ~{size_text(sum(x["size"] for x in chosen)*bf)} for all selected.')
         if not is_separate_physical_pool(dst,bd):print('WARNING: Backup is on same ZFS pool; not independent against pool failure.')
         bc=input_fn('Which ZIMs to back up? Numbers in the SELECTED list, all, none: ').strip().lower()
@@ -455,7 +546,16 @@ def queue_chosen(chosen, input_fn=input, all_selected=False):
             else:print('Not enough backup space for:',it['title'])
     else:print('No independent ZIM backup destination configured. ZFS block copies and snapshots are not separate backups.')
     confirm=input_fn('Queue these '+str(len(chosen))+' archive(s) for SHA-verified resumable download? type YES: ')
-    if confirm!='YES':return []
+    if confirm!='YES':
+        print('Nothing changed or queued.')
+        return []
+    if lower_copies:
+        # Apply immediately before enqueue, after BOTH consent prompts.
+        _enable_single_copy_for_zims(cfg)
+        updated=_storage_estimate(chosen,dst,stage,zfs_copies(dst),zfs_copies(stage))
+        if updated['required_final']>disk_free(dst) or updated['required_stage']>disk_free(stage):
+            print('Capacity changed or ZFS property not applied; nothing queued.')
+            return []
     enqueue(chosen)
     print('Queued. Automatic timer resumes downloads after power interruption.')
     return chosen
