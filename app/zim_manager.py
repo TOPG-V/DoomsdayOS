@@ -123,6 +123,19 @@ def fetch_checksum(url):
     if not m: raise ValueError('Official sidecar has no SHA-256 digest')
     return m.group(1).lower()
 
+def _catalog_url(href):
+    """Normalize official .zim.meta4 OPDS references to the corresponding .zim."""
+    parsed = urllib.parse.urlsplit(href)
+    path = parsed.path
+    if path.lower().endswith('.zim.meta4'):
+        path = path[:-len('.meta4')]
+    url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, '', ''))
+    try:
+        return safe_url(url)
+    except ValueError:
+        return None
+
+
 def parse_catalog(xml):
     root=ET.fromstring(xml)
     atom='{http://www.w3.org/2005/Atom}'
@@ -130,41 +143,55 @@ def parse_catalog(xml):
     for entry in root.findall(atom+'entry'):
         title=(entry.findtext(atom+'title') or '').strip()
         ident=(entry.findtext(atom+'id') or title).strip()
+        options=[]
         for link in entry.findall(atom+'link'):
             href=link.get('href','')
             rel=link.get('rel','')
-            if 'acquisition/open-access' not in rel or not href.lower().split('?')[0].endswith('.zim'):continue
-            try:safe_url(href.split('?')[0])
-            except ValueError:continue
-            size=0
-            # OPDS implementations vary: size or zimSize may be entry-level.
-            for key,val in {**entry.attrib,**link.attrib}.items():
-                if key.lower().endswith(('zimsize','length','size')):
-                    with contextlib.suppress(ValueError):size=max(size,int(val))
-            for node in entry.iter():
-                key=node.tag.rsplit('}',1)[-1].lower()
-                if key in ('zimsize','size','filesize') and node.text:
-                    with contextlib.suppress(ValueError):size=max(size,int(node.text.strip()))
-            ret.append({'id':ident,'title':title or Path(urllib.parse.urlsplit(href).path).name,'url':href.split('?')[0],'size':size})
-            break
+            if 'acquisition/open-access' not in rel:
+                continue
+            url=_catalog_url(href)
+            if not url:
+                continue
+            direct=urllib.parse.urlsplit(href).path.lower().endswith('.zim')
+            options.append((not direct,link,url))
+        if not options:
+            continue
+        options.sort(key=lambda option:option[0])
+        _,link,url=options[0]
+        size=0
+        for node in entry.iter():
+            key=node.tag.rsplit('}',1)[-1].lower()
+            if key in ('zimsize','filesize') and node.text:
+                with contextlib.suppress(ValueError,TypeError):
+                    size=max(size,int(node.text.strip()))
+        if not size:
+            with contextlib.suppress(ValueError,TypeError):
+                link_bytes=int(link.get('length','0'))
+                if link_bytes >= 1024*1024 or urllib.parse.urlsplit(link.get('href','')).path.lower().endswith('.zim'):
+                    size=link_bytes
+        ret.append({'id':ident,'title':title or Path(urllib.parse.urlsplit(url).path).name,'url':url,'size':size})
     return ret
 
+
 def catalog(search='',limit=100,fetcher=None):
-    # Bounded pagination by default; user can ask for all via --all but must confirm capacities.
+    # Advance across pages even if a given page has no title matches.
     items=[];seen=set(); start=0;count=100
     fetcher=fetcher or (lambda url:request(url,timeout=45).read())
-    while len(items)<limit:
-        url=CATALOG+'?'+urllib.parse.urlencode({'start':start,'count':min(count,limit-len(items))})
-        found=parse_catalog(fetcher(url))
-        if not found:break
+    while len(items)<limit and start<10000:
+        page_count=min(count,10000-start)
+        url=CATALOG+'?'+urllib.parse.urlencode({'start':start,'count':page_count})
+        data=fetcher(url)
+        root=ET.fromstring(data)
+        feed_count=len(root.findall('{http://www.w3.org/2005/Atom}entry'))
+        found=parse_catalog(data)
         for item in found:
             if item['url'] not in seen:
                 seen.add(item['url'])
-                if not search or search.casefold() in item['title'].casefold():items.append(item)
-        start+=count
-        if len(found)<min(count,limit):break
-        # Bound broad searches without a user-provided filter (never quietly fetch entire internet catalog).
-        if start>=10000:break
+                if not search or search.casefold() in item['title'].casefold():
+                    items.append(item)
+                    if len(items)>=limit:break
+        start+=page_count
+        if feed_count<page_count:break
     return items
 
 def enqueue(items):
@@ -312,11 +339,15 @@ def run_queue():
 def interactive_wizard(input_fn=input,fetch=None):
     print('\nDoomsday ZIM Library — choose archives one by one or all from a filtered catalog.')
     print('Full Kiwix catalog may exceed available storage. No downloads start until you confirm.')
-    term=input_fn('Filter term (e.g. wikipedia_en, medical; empty = first 100): ').strip()
+    term=input_fn('Search titles (e.g. Wikipedia, medical; Enter = browse first 100; ALL = browse): ').strip()
+    if term.casefold()=='all':term=''
     try:items=catalog(term,limit=100,fetcher=fetch)
     except Exception as e:
         print('Catalog unavailable:',e,'\nYou can rerun setup later when online.');return []
-    if not items:print('No matching downloadable ZIMs.');return []
+    if not items:
+        print('No matching downloadable ZIMs. The live catalog returned no supported archive links.')
+        print('Try a network check: curl -IL https://library.kiwix.org/catalog/v2/entries')
+        return []
     for i,x in enumerate(items,1):print(f"{i:>3}  {x['title'][:65]:65} {size_text(x['size']) if x['size'] else 'size unknown'}")
     sel=input_fn('Numbers (1,3,7), all matching catalog entries, or skip: ').strip().lower()
     if sel in ('','skip','none'):return []
