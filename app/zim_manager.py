@@ -327,11 +327,8 @@ def _safe_backup_path(value, cfg, os_folder=False):
     if not src:raise ValueError('Backup parent storage is not mounted')
     if os_folder:
         root_source=dataset_at(Path('/'))
-        if (not root_source or src.split('/')[0]!=root_source.split('/')[0] or
-                not src.startswith(root_source.split('/')[0]+'/')):
-            # Also works for a conventional non-ZFS root such as /dev/sda2.
-            if not (src==root_source and ancestor.stat().st_dev==Path('/').stat().st_dev):
-                raise ValueError('This is not a folder on the OS filesystem/pool')
+        if not root_source or _pool_identity(ancestor)!=_pool_identity(Path('/')):
+            raise ValueError('This is not a folder on the OS filesystem/pool')
     return path,ancestor,src
 
 
@@ -347,8 +344,8 @@ def _backup_destination(cfg, input_fn=input):
     if choice=='4':return '', '', False
     if choice=='1':
         if not old:return '', '', False
-        path,_,src=_safe_backup_path(old,cfg)
-        return str(path),src,src.split('/')[0]==dataset_at(Path('/')).split('/')[0]
+        path,probe,src=_safe_backup_path(old,cfg)
+        return str(path),src,_pool_identity(probe)==_pool_identity(Path('/'))
     if choice=='2':
         value=input_fn(f'OS backup folder (Enter = {DEFAULT_OS_BACKUP_DIR}): ').strip()
         path,_,src=_safe_backup_path(value or str(DEFAULT_OS_BACKUP_DIR),cfg,os_folder=True)
@@ -357,19 +354,19 @@ def _backup_destination(cfg, input_fn=input):
         return str(path),src,True
     if choice=='3':
         value=input_fn('Existing mounted backup directory (absolute path): ').strip()
-        path,_,src=_safe_backup_path(value,cfg)
+        path,probe,src=_safe_backup_path(value,cfg)
         if not path.is_dir():raise ValueError('External destination must already exist and be mounted')
         independent=is_separate_physical_pool(Path(cfg['zim_dir']),path)
         if not independent:
             print('WARNING: This location is not independently verified as another physical drive.')
-        return str(path),src,src.split('/')[0]==dataset_at(Path('/')).split('/')[0]
+        return str(path),src,_pool_identity(probe)==_pool_identity(Path('/'))
     raise ValueError('Choose 1, 2, 3 or 4')
 
 
 def _pool_identity(path):
     """ZFS datasets in the same pool share capacity; otherwise identify filesystem."""
     src=dataset_at(path)
-    if src and ('/' in src or src in ('rpool','bpool','tank')):
+    if src and not src.startswith('/') and ('/' in src or src in ('rpool','bpool','tank')):
         return 'zfs:'+src.split('/')[0]
     try:return 'device:'+str(Path(path).stat().st_dev)
     except OSError:return 'mount:'+src
@@ -478,7 +475,7 @@ def backup_zim(source,backupdir, cfg=None):
         raise ValueError(f'INSUFFICIENT BACKUP SPACE: need {size_text(required)}, available {size_text(disk_free(backupdir))}. Original preserved.')
     part=backupdir/(source.name+'.copying')
     if part.exists():
-        part.unlink()  # Only a stale temporary copy with this exact filename.
+        raise ValueError('An unfinished .copying backup already exists; inspect it before retrying')
     with open(source,'rb') as a,open(part,'xb') as b:
         shutil.copyfileobj(a,b,4*CHUNK);b.flush();os.fsync(b.fileno())
     if sha256(part)!=srcsum:raise ValueError('Backup verification failed')
