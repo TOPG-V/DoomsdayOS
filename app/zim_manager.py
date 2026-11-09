@@ -15,6 +15,7 @@ HOSTS = ('download.kiwix.org', 'mirror.download.kiwix.org')
 UA = 'DoomsdayVault/3 (offline archive downloader)'
 CHUNK = 1024 * 1024
 RESERVE = 3 * 1024**3
+BUNDLE_MANIFEST = Path(__file__).with_name('bundle_manifest.json')
 
 
 def safe_url(url):
@@ -336,7 +337,63 @@ def run_queue():
         subprocess.run(['systemctl','try-restart','doomsday-kiwix.service'],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 
 
-def interactive_wizard(input_fn=input,fetch=None):
+def load_preset(name, manifest_path=None):
+    """Return exact archived collection entries, never an arbitrary entire OPDS catalog."""
+    with open(manifest_path or BUNDLE_MANIFEST, encoding='utf-8') as f:
+        data=json.load(f)
+    if data.get('schema')!=1 or name not in ('full','partial','wikipedia'):
+        raise ValueError('Unknown archive preset/manifest version')
+    lookup={}
+    for item in data['items']:
+        safe_url(item['url'])
+        if item['id']!=Path(urllib.parse.urlsplit(item['url']).path).name or item['id'] in lookup:
+            raise ValueError('Invalid or duplicate preset archive filename')
+        if not isinstance(item['size'],int) or item['size']<=0:
+            raise ValueError('Preset archive size missing or invalid')
+        if item.get('sha256') and not re.fullmatch('[0-9a-f]{64}',item['sha256']):
+            raise ValueError('Invalid preset archive hash')
+        lookup[item['id']]=item
+    names=data['presets'][name]
+    if not names or len(names)!=len(set(names)) or not all(n in lookup for n in names):
+        raise ValueError('Incomplete preset archive list')
+    chosen=[dict(lookup[n]) for n in names]
+    if name=='partial' and any(n.startswith('ted_') for n in names):
+        raise ValueError('Partial preset unexpectedly includes TED Talks')
+    if name=='wikipedia' and names!=['wikipedia_en_all_maxi_2026-08.zim']:
+        raise ValueError('Wikipedia-only preset must contain only English Wikipedia')
+    return chosen
+
+
+def interactive_wizard(input_fn=input, fetch=None):
+    """Three one-key choices based on the original archived ZIM selection."""
+    print('\nDOOMSDAY VAULT — Choose one download package')
+    labels=[('1','full','FULL — everything in the original ZIM collection'),
+            ('2','partial','PARTIAL — everything except TED Talks videos'),
+            ('3','wikipedia','WIKIPEDIA ONLY — full English Wikipedia')]
+    try:
+        presets={key:load_preset(name) for key,name,_ in labels}
+    except (OSError,ValueError,KeyError,TypeError) as e:
+        print('Bundled download preset unavailable:',e)
+        return []
+    for key,name,label in labels:
+        total=sum(x['size'] for x in presets[key])
+        print(f'{key}) {label}: {total/1e9:,.1f} GB ({size_text(total)}), {len(presets[key])} ZIM(s)')
+    print('Download sizes are from the original torrent metadata, NOT free-space requirements.')
+    print('Press Enter to exit. For individual ZIM selection: sudo doomsday-zims browse')
+    selected=input_fn('Select 1, 2, or 3: ').strip()
+    if selected not in presets:
+        print('No download package selected.')
+        return []
+    chosen=presets[selected]
+    print('Selected:',next(label for key,name,label in labels if key==selected))
+    print('Contents:')
+    for index,item in enumerate(chosen,1):
+        print(f'  {index:>2}. {item["title"]} — {item["size"]/1e9:.2f} GB')
+    print('Existing ZIMs are not overwritten; queue resumes safely after interruption.')
+    return queue_chosen(chosen,input_fn=input_fn,all_selected=True)
+
+
+def interactive_catalog_wizard(input_fn=input, fetch=None):
     print('\nDoomsday ZIM Library — choose archives one by one or all from a filtered catalog.')
     print('Full Kiwix catalog may exceed available storage. No downloads start until you confirm.')
     term=input_fn('Search titles (e.g. Wikipedia, medical; Enter = browse first 100; ALL = browse): ').strip()
@@ -358,6 +415,10 @@ def interactive_wizard(input_fn=input,fetch=None):
     else:
         try:chosen=[items[int(n.strip())-1] for n in sel.split(',')]
         except (ValueError,IndexError):print('Invalid selection');return []
+    return queue_chosen(chosen, input_fn=input_fn, all_selected=(sel=='all'))
+
+def queue_chosen(chosen, input_fn=input, all_selected=False):
+    if not chosen:return []
     cfg=config();dst=Path(cfg['zim_dir']);avail=disk_free(dst);factor=zfs_copies(dst)
     unknown=[x for x in chosen if not x['size']]
     total=sum(x['size'] for x in chosen if x['size'])*factor
@@ -368,7 +429,7 @@ def interactive_wizard(input_fn=input,fetch=None):
     print(f'Final archives estimate: {size_text(total)}; temporary staging max ~{size_text(biggest*stage_copies)}; current pool free {size_text(avail)}.')
     if unknown:
         print('Unknown sizes: cannot safely select all until sizes are determined. Choose individually or obtain sizes first.')
-        if sel=='all':return []
+        if all_selected:return []
     if peak>avail or biggest*stage_copies+RESERVE>stage_free:
         print('Insufficient free space for archive + temporary staging at peak. Choose a smaller set. Nothing queued.')
         return []
@@ -400,9 +461,10 @@ def interactive_wizard(input_fn=input,fetch=None):
     return chosen
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('command',choices=['wizard','run','status','enqueue-url']);p.add_argument('--url');p.add_argument('--sha256');p.add_argument('--size',type=int,default=0)
+    p=argparse.ArgumentParser();p.add_argument('command',choices=['wizard','browse','run','status','enqueue-url']);p.add_argument('--url');p.add_argument('--sha256');p.add_argument('--size',type=int,default=0)
     a=p.parse_args()
     if a.command=='wizard':interactive_wizard()
+    elif a.command=='browse':interactive_catalog_wizard()
     elif a.command=='run':run_queue()
     elif a.command=='status':
         for x in read_queue():print(x['status'],x['title'],x.get('error',''))
