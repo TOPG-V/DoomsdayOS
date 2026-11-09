@@ -40,7 +40,7 @@ class StorageWizardTests(unittest.TestCase):
             self.assertLess(efficient['required_final'],888*GIB)
 
     def test_space_mode_requires_two_confirmations(self):
-        out,copies,enables,queues=self.simulate(['SINGLE COPY','YES'])
+        out,copies,enables,queues=self.simulate(['SINGLE COPY','','YES'])
         self.assertEqual(len(out),39)
         self.assertEqual((copies,enables,queues),(1,1,1))
 
@@ -50,7 +50,7 @@ class StorageWizardTests(unittest.TestCase):
         self.assertEqual((copies,enables,queues),(2,0,0))
 
     def test_declining_final_yes_changes_nothing(self):
-        out,copies,enables,queues=self.simulate(['SINGLE COPY','NO'])
+        out,copies,enables,queues=self.simulate(['SINGLE COPY','','NO'])
         self.assertEqual(out,[])
         self.assertEqual((copies,enables,queues),(2,0,0))
 
