@@ -139,36 +139,39 @@ The administrator can change `stream_mib_per_second` in `/etc/doomsday-vault/bac
 * The backup policy covers system/boot ZFS filesystems and selected ZIM copies; it is not a forensic disk image of every partition or attached drive. Data stored only on an external ZFS pool requires a third independent destination for full-drive failure protection.
 * Archive catalog compatibility depends on Kiwix's live feed and SHA-256 sidecars; test the first real download. Mocked tests cannot guarantee publisher endpoints stay unchanged.
 
-
 ## Three first-boot download packages (original ZIM collection)
 
-The `sudo doomsday-setup` first-boot wizard and `sudo doomsday-zims wizard` now offer **exactly three download choices**, based on the original `Zim(1).zip` torrent collection, rather than the entire Kiwix catalog:
+The **first-boot** `sudo doomsday-setup` wizard and `sudo doomsday-zims wizard` now offer **exactly three download choices**. This is a fixed collection based on the original `Zim(1).zip` torrent list, not a download of the entire Kiwix catalog:
 
-| Choice | Contents | Archive size (decimal GB) |
+| Choice | Contents | Source archive size (decimal GB) |
 |---|---|---:|
-| `1` **Full** | All 39 original ZIMs, including TED Talks | **575.0 GB** (~577 GB target) |
-| `2` **Partial** | The same 38 original ZIMs excluding TED Talks | **483.8 GB** |
-| `3` **Wikipedia Only** | Full English Wikipedia (`wikipedia_en_all_maxi_2026-08.zim`) | **127.4 GB** |
+| `1` **Full** | All 39 original ZIM archives, including TED Talks | **575.0 GB** (approximately the requested 577 GB) |
+| `2` **Partial** | The same original collection **except TED Talks**, with all 38 other ZIMs unchanged | **483.8 GB** |
+| `3` **Wikipedia Only** | Only full English Wikipedia (`wikipedia_en_all_maxi_2026-08.zim`) | **127.4 GB** |
 
-**The 400 GB partial estimate needs correction:** the exact source bundle totals 575.0 GB, and TED Talks contributes 91.18 GB. Leaving every other archive intact therefore requires 483.8 GB, not 400 GB. Disk-space requirements are greater because ZFS replication, temporary staging, free-space reserve, and independent backups can consume additional space. The wizard calculates and checks storage before enqueueing; it does not format disks.
+**Why Partial isn't ~400 GB:** TED Talks is 91.18 GB in the provided torrent metadata, so 575.0 GB minus 91.18 GB = 483.8 GB. Removing more material to hit 400 GB would contradict keeping the rest of the full collection. These figures exclude ZFS `copies=2` overhead, the largest temporary staging file, free-space reserve and optional independent backups. The installer checks actual disk capacity before enqueueing and will refuse oversized jobs rather than fill the system disk. It never formats a disk to make room.
 
-This version ships the exact 39-file manifest generated from the user's original torrent and SHA-256 metadata. One entry (`devdocs_en_python_2026-10.zim`) has no supplied checksum; a verified publisher sidecar is required at download time. Archives remain pinned to the provided 2025–2026 versions and may become unavailable at their publisher. Downloads are resumable and published only after SHA-256 verification; installed ZIMs stay read-only as in V6. No full-size ZIMs are stored on GitHub.
+The bundled manifest contains exact official Kiwix URLs, byte sizes and the 38 SHA-256 hashes supplied alongside the torrents. **One archive (`devdocs_en_python_2026-10.zim`) had no supplied SHA-256 sidecar:** it will require fetching a SHA-256 sidecar from the official server at download time; if unavailable, it is kept for retry rather than installed unverified. Preset contents are frozen at these 2025–2026 archive versions; the files may be removed or moved by their publisher. No large content is bundled in GitHub.
 
-Select **1**, **2** or **3**, review what is included, and type `YES` to add the package to the existing download queue after the storage/backup prompt. Press Enter to cancel. For individual searching of live Kiwix entries, use `sudo doomsday-zims browse` instead; that command preserves the previous search and individual-selection workflow.
+Press **1**, **2** or **3**, review the contents and space estimate, select which ZIMs to back up if a separate drive is enrolled, then type `YES` to queue. The download system uses the existing timer, SHA-256 check, resumable staging, and read-only published library. It does not begin the transfer merely by choosing a number.
 
-### Upgrade an already installed V6 / V6.1
+To search the broader live Kiwix catalog and choose individual ZIMs, use `sudo doomsday-zims browse`. This keeps per-item selection available without adding a fourth option to the first-boot package menu.
 
-With Internet access, paste this single line to update only the two app files (not the ZFS pool configuration), verify syntax, and open the three-option menu:
+### Upgrade an already-installed V6 / V6.1 without reinstalling or changing ZFS
+
+Run the following one-line command while connected to the Internet (uses both new files from this repository, checks Python and JSON syntax before installing them):
 
 ```bash
 t="$(mktemp -d)" && curl -fsSL https://raw.githubusercontent.com/TOPG-V/DoomsdayOS/main/app/zim_manager.py -o "$t/zim_manager.py" && curl -fsSL https://raw.githubusercontent.com/TOPG-V/DoomsdayOS/main/app/bundle_manifest.json -o "$t/bundle_manifest.json" && python3 -m py_compile "$t/zim_manager.py" && python3 -m json.tool "$t/bundle_manifest.json" >/dev/null && sudo install -m 0644 "$t/zim_manager.py" /opt/doomsday-firstboot/app/zim_manager.py && sudo install -m 0644 "$t/bundle_manifest.json" /opt/doomsday-firstboot/app/bundle_manifest.json && rm -rf "$t" && sudo doomsday-zims wizard
 ```
 
+A fresh clone and `sudo ./install.sh` also include the new manifest automatically. Downloaded ZIM files and previously queued entries are not deleted by this update.
+
+![Illustration of the three preset menu](docs/screens/zims.svg)
+
 ## Hotfix 2026-11-09 — Empty ZIM catalog in V6
 
-**Symptom:** After running `sudo doomsday-setup`, pressing Enter at the catalog filter prints `No matching downloadable ZIMs`. V6's parser recognized direct `.zim` acquisition links only. Kiwix OPDS also uses `.zim.meta4` URLs even when advertising MIME type `application/x-zim`, so archives were skipped.
-
-**Fix:** The updated ZIM selector normalizes official `.zim.meta4` acquisition references into the corresponding direct `.zim` download URLs, improves paginated filtering, and treats `all` as an alias for browsing at the initial title-filter prompt. Selecting all downloads is still a separate selection and space check.
+**Symptom:** After `sudo doomsday-setup`, pressing Enter at the catalog filter prints `No matching downloadable ZIMs`. V6's parser recognized direct `.zim` acquisition links only. Some Kiwix OPDS entries use `.zim.meta4` URLs even when advertising the MIME type `application/x-zim`. This meant supported books were skipped. The hotfix normalizes official `.zim.meta4` acquisition references into direct `.zim` download URLs, improves paginated filtering, and treats `all` as an alias for browsing at the initial title-filter prompt. Selecting *all* downloads is still a separate confirmation and storage-capacity check.
 
 To update **an already installed** V6 without touching ZFS pools, paste this **one line** into Ubuntu Terminal when connected to the Internet:
 
@@ -176,10 +179,7 @@ To update **an already installed** V6 without touching ZFS pools, paste this **o
 f="$(mktemp --suffix=.py)" && curl -fsSL https://raw.githubusercontent.com/TOPG-V/DoomsdayOS/main/app/zim_manager.py -o "$f" && python3 -m py_compile "$f" && sudo install -m 0644 "$f" /opt/doomsday-firstboot/app/zim_manager.py && rm -f "$f" && sudo doomsday-zims wizard
 ```
 
-When you reach `Search titles`, press Enter to browse up to the first 100 ZIMs, or type a keyword such as `Wikipedia`. Then pick listed numbers or type `all` at the **selection** prompt. No download begins without explicit `YES` confirmation.
-
-Five additional unit tests cover OPDS metalinks, URL normalization, size metadata, untrusted host rejection, and pagination. These are synthetic feed tests; a live Kiwix catalog and full ZIM download must still be confirmed on connected hardware.
-
+When you reach `Search titles`, press Enter to browse up to the first 100 ZIMs, or type a keyword such as `Wikipedia`. Then pick the listed numbers or type `all` at the **selection** prompt. No download begins before the explicit `YES` confirmation. The hotfix is locally tested against synthetic OPDS samples, but a successful live catalog fetch still depends on network and Kiwix endpoint availability.
 
 ## V6.3 — clear storage estimates and optional ZIM-only space-saving mode
 
@@ -192,3 +192,21 @@ For the Full preset, the V6 preservation default of ZFS `copies=2` requires abou
 For Full, `copies=1` on the dedicated archive and staging datasets lowers the estimated peak to around **745 GiB**, without changing download bytes. This is **less redundancy against corruption**, not a free space compression trick. Do not rely on it as protection against hardware failure; an independent, checksum-verified second-device backup is strongly recommended. This estimate is not a guarantee if other applications, snapshots or ZFS metadata use additional space.
 
 To use the new wizard on an existing V6 machine, install the updated V6.3 ZIP or replace `app/zim_manager.py` and `app/bundle_manifest.json` in `/opt/doomsday-firstboot/app` with the files from GitHub, then run `sudo doomsday-zims wizard`. Do **not** rerun the installer from an older, extracted V6 folder, which would replace the new code with old code. The status remains available through `sudo doomsday-zims status`.
+
+
+## V6.4 — OS-folder ZIM backups and per-ZIM exclusions
+
+Use `sudo doomsday-zims wizard` (or `sudo doomsday-setup` on first boot). The three fixed Full/Partial/Wikipedia download presets are unchanged. After a preset and the original ZIM capacity check, choose where to keep **optional backup copies**:
+
+* `1` — keep the existing directory (or none).
+* `2` — choose a folder on the OS drive; press Enter to use `/var/lib/doomsday-vault/zim-backups`, or type another absolute path on the OS filesystem/pool. The folder is created **only after** final `YES` confirmation.
+* `3` — choose an existing mounted directory on another storage volume.
+* `4` — no extra ZIM backups.
+
+For a selected destination, the wizard lists every selected ZIM with its number. At **Back up which ZIMs?**, enter `all`, `none`, comma-separated numbers such as `1,3,34`, or `exclude 13,29,33` to back up all except those entries. If there is **INSUFFICIENT BACKUP SPACE**, it shows needed space, space available for additional backups, and shortage, then prompts for numbers to exclude. It does **not** silently drop backups. Every excluded ZIM **still downloads to the main protected archive**; only its optional backup copy is omitted. Previous backup copies are never deleted automatically by exclusions.
+
+The planner accounts for original archive and staging space plus requested additional ZIM backups on the **same** ZFS pool, and reserves an extra 20 GiB for an OS-folder destination to reduce the chance of filling the boot drive. For already published ZIM files matching catalog sizes, it estimates only the remaining new downloads (their SHA-256 is still checked by the worker). If original storage is insufficient at ZFS `copies=2`, the separate opt-in `SINGLE COPY` flow from V6.3 remains; excluding additional backups does **not** turn off `copies=2` in the original archive.
+
+**Critical tradeoff:** A backup folder on the OS drive is not independent if the OS disk fails; snapshots and copies on the same physical disk do not prevent total disk-loss. Files in OS folders may also be included in ordinary root filesystem snapshots, increasing space requirements. For disaster recovery, retain at least one physically separate, verified copy. Selecting the OS folder disables unattended ZIM auto-repair from that folder. The software never formats a disk or deletes excluded ZIMs.
+
+Existing installed archives can be reselected for backup without downloading them again. A changed backup selection updates queued archive metadata, and selecting an already-completed archive for backup schedules it for another checksum check and copy if necessary. View status and the backup selection with `sudo doomsday-zims status`. File paths and mount identifiers are verified again before copying; an unplugged disk is never silently replaced by writing into its empty mount directory.
