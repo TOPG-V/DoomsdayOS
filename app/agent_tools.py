@@ -11,6 +11,7 @@ from offline_maps import find_places, status as map_status
 from trip_planner import plan as plan_route, point as verify_point
 from zim_index import article_title_search
 import research_library
+import system_maintenance
 
 TOOL_DEFS = [
  {'type':'function','function':{'name':'current_time','description':'Current date, time and UTC offset of the local DoomsdayOS machine. Not the time at a remote destination.','parameters':{'type':'object','properties':{}}}},
@@ -19,6 +20,7 @@ TOOL_DEFS = [
  {'type':'function','function':{'name':'map_coverage','description':'Inspect installed offline tile/road/walking graph availability without making a route.','parameters':{'type':'object','properties':{}}}},
  {'type':'function','function':{'name':'find_articles','description':'Search indexed ZIM article titles (not general internet search). Returns article links and excerpts.','parameters':{'type':'object','properties':{'query':{'type':'string'}},'required':['query']}}},
  {'type':'function','function':{'name':'find_documents','description':'Search previously indexed local PDFs, imported websites, and ZIM articles.','parameters':{'type':'object','properties':{'query':{'type':'string'}},'required':['query']}}},
+ {'type':'function','function':{'name':'system_diagnostics','description':'Read-only health analysis of local OS, ZFS, package state and failed services. Suggest safe next steps, never execute terminal commands or repairs.','parameters':{'type':'object','properties':{}}}},
  {'type':'function','function':{'name':'read_document','description':'Read an existing indexed local document excerpt by its source_id returned by find_documents. Not arbitrary files or URLs.','parameters':{'type':'object','properties':{'source_id':{'type':'string'}},'required':['source_id']}}}
 ]
 NAMES = {x['function']['name'] for x in TOOL_DEFS}
@@ -55,6 +57,7 @@ def resolve_place(text, location=None):
 def execute_tool(name,args,location=None):
     if name not in NAMES:raise ValueError('Tool is not permitted: '+str(name)[:50])
     if not isinstance(args,dict):raise ValueError('Tool arguments must be an object')
+    if name=='system_diagnostics':return system_maintenance.analyze()
     if name=='current_time':
         now=datetime.datetime.now().astimezone()
         return {'local_iso':now.isoformat(timespec='seconds'),'timezone':str(now.tzinfo),'source':'local device clock'}
