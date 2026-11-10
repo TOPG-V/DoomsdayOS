@@ -6,3 +6,9 @@
 .map-buttons{display:flex;gap:8px}.map-buttons button{min-width:42px}
 #offlineCanvas{display:block;width:100%;height:auto;max-height:520px;background:#0b1722;border-radius:10px;cursor:grab;touch-action:none}
 #offlineCanvas:active{cursor:grabbing}.route-panel .inputrow{flex-wrap:wrap}.route-panel .inputrow input{min-width:190px;flex:1}
+
+/* Pictures are attached to chosen ZIM articles, not the whole archive. */
+.article-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:13px;margin-top:14px}
+.article-photo{background:#0f1921;border:1px solid #364450;border-radius:10px;padding:8px;min-width:0}
+.article-photo img{height:130px;width:100%;object-fit:contain;background:#071018;border-radius:7px}
+.article-photo div{font-size:12px;line-height:1.4;padding-top:7px;overflow-wrap:anywhere}
