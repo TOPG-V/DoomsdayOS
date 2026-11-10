@@ -575,3 +575,18 @@ After installing, `sudo doomsday-research status`, `sudo doomsday-research add-p
 External retrieval is **disabled by default** and limited to a single explicitly approved public HTTPS link: no redirects, non-public addresses or unrestricted crawls. PDFs are text-extracted, *not* automatically OCRed or visually parsed. A PDF can have at most 40 MiB, and indexing is capped at 200 pages. LLM answers are potentially inaccurate; source citations should be inspected directly. The research tab is not yet a full general Internet search engine.
 
 Detailed usage and limitations: [`docs/RESEARCH_V71.md`](docs/RESEARCH_V71.md). The research feature is additive to the existing Kiwix, maps, backups, torrent, checksum and recovery components.
+
+
+## v7.3 native OCR & guarded System Health
+
+- Local image OCR: in **Visual Lens**, select **Read text (native OCR)** and choose an installed Tesseract language. Works in **Core** without AI or Internet. English is installed with `tesseract-ocr-eng`, Polish with `tesseract-ocr-pol`; install more local packs as needed.
+- Scanned PDF OCR: `pdftotext` first; only pages without extractable text are rendered via Poppler and processed by Tesseract, up to **12 scanned pages per PDF import**. Originals are preserved. Large scanned PDFs should be split into smaller documents. No OCR cloud APIs.
+- **System Health** > **Analyze System**: shows bounded read-only `zpool`, `df`, package and service checks, alongside only enumerated repair plans.
+- **Run read-only terminal script**: select storage, boot, integrity, packages or all. `packages` performs a bounded `dpkg --verify` (differences can be legitimate local configuration changes). This is a built-in allowlist rather than arbitrary `bash` input.
+- To execute a reviewed repair (in your own terminal, explicitly): `sudo doomsday-maintenance apply restart-doomsday-kiwix --confirm APPLY-restart-doomsday-kiwix`.
+- Other available actions: `restart-doomsday-ai-web`, `protect-zims`, `scrub-enrolled`; the scrub only operates on an exact, already enrolled ZFS pool, and ZFS can repair corruption only when there is a healthy redundant copy.
+- A low-priority `doomsday-maintenance-auto.timer` detects and restarts *failed reader services only*, at most twice per day. It never runs `apt`, `fsck`, `zpool clear`, deletions, user/AI shell scripts, filesystem rewrites, or root rollback.
+- The AI can use the `system_diagnostics` **read-only** tool and explain the repair options. It cannot execute privileged repairs or arbitrary terminal scripts from an untrusted webpage or LLM tool call.
+- To disable automatic reader-service recovery: `sudo systemctl disable --now doomsday-maintenance-auto.timer`.
+
+**Do not treat a clean diagnostic report as proof that all files are intact.** Keep SHA-verified external ZIM backups and schedule scrubs on redundant pools. When the ZIM dataset uses `copies=1`, checksums detect errors but cannot provide a missing replacement block.
