@@ -122,3 +122,56 @@ class ArticleScopeTests(unittest.TestCase):
         self.assertEqual(matcher.call_args.kwargs['title_query'],'solar energy')
 
 if __name__=='__main__':unittest.main()
+
+class OptionalVisualRagTests(unittest.TestCase):
+    def test_never_runs_vision_without_optin(self):
+        articles=[{'zim':'t.zim','path':'A/Solar','title':'Solar Energy','link':'http://localhost:8080/t/A/Solar','snippet':'solar panel info'}]
+        images=[{'zim':'t.zim','path':'I/solar.png','title':'Solar Energy','article_link':'http://localhost:8080/t/A/Solar','image_url':'http://localhost:8080/t/I/solar.png'}]
+        with mock.patch.object(ai_gateway,'article_title_search',return_value=articles),\
+             mock.patch.object(ai_gateway,'article_images',return_value=images),\
+             mock.patch('article_vision.inspect_selected_images') as inspect,\
+             mock.patch.object(ai_gateway,'_local_json',return_value='answer'):
+            result=ai_gateway.dispatch({'action':'chat','mode':'rag','prompt':'solar energy'})
+        inspect.assert_not_called()
+        self.assertIsNone(result['visual_note'])
+
+    def test_visual_rag_uses_only_selected_images(self):
+        sources=[{'zim':'t.zim','path':'A/Solar','title':'Solar Energy','link':'http://localhost:8080/t/A/Solar','snippet':'panels'}]
+        scoped=[{'zim':'t.zim','path':'I/solar.png','title':'Solar Energy','article_link':sources[0]['link'],'image_url':'http://localhost:8080/t/I/solar.png'}]
+        observed=[]
+        def inspect(images,query,runner):
+            observed.extend(images)
+            return {'observation':'A panel tilted toward sunlight.','images_used':1}
+        messages=[]
+        def local_reply(ep,payload,timeout=90):
+            messages.extend(payload['messages']);return 'Answer [1]'
+        with mock.patch.object(ai_gateway,'article_title_search',return_value=sources),\
+             mock.patch.object(ai_gateway,'article_images',return_value=scoped),\
+             mock.patch('article_vision.inspect_selected_images',side_effect=inspect),\
+             mock.patch.object(ai_gateway,'_local_json',side_effect=local_reply):
+            r=ai_gateway.dispatch({'action':'chat','mode':'rag','prompt':'solar energy','visual_rag':True})
+        self.assertEqual(observed,scoped)
+        self.assertIn('Inspected up to 1',r['visual_note'])
+        self.assertIn('panel tilted',str(messages))
+
+    @unittest.skipIf(Image is None,'Pillow is optional')
+    def test_visual_loading_rejects_nonselected_and_large_images(self):
+        import article_vision,types
+        t=tempfile.TemporaryDirectory();self.addCleanup(t.cleanup)
+        zim=Path(t.name)/'good.zim';zim.write_bytes(b'zim')
+        im=Image.new('RGB',(40,35),(20,50,90));buff=io.BytesIO();im.save(buff,format='PNG')
+        data=buff.getvalue()
+        class Reader:
+            def __init__(self,_):pass
+            def __enter__(self):return self
+            def __exit__(self,*_):pass
+            def get_entry_by_path(self,path):
+                return Entry(path,'test','image/png',data)
+        libzim=types.ModuleType('libzim');reader=types.ModuleType('libzim.reader');reader.Archive=Reader
+        with mock.patch.object(article_vision,'_verified_archive',return_value=zim),\
+             mock.patch.dict(sys.modules,{'libzim':libzim,'libzim.reader':reader}):
+            output=article_vision.prepare_vision_pictures([
+                {'zim':'good.zim','path':'/etc/passwd','title':'Invalid'},
+                {'zim':'good.zim','path':'I/photo.png','title':'Solar','article_link':'http://localhost:8080/good/A/Solar'}])
+        self.assertEqual(len(output),1)
+        self.assertTrue(output[0]['url'].startswith('data:image/jpeg;base64,'))
