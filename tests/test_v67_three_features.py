@@ -75,9 +75,15 @@ class OfflineMapTests(unittest.TestCase):
         self.assertEqual(mime,'image/png');self.assertIn(b'MOCK_TILE',blob)
         with self.assertRaises(FileNotFoundError):offline_maps.tile(1,1,1)
         with self.assertRaises(ValueError):offline_maps.tile(27,0,0)
-    def test_vector_tiles_rejected(self):
-        with sqlite3.connect(self.map) as db:db.execute("UPDATE metadata SET value='pbf' WHERE name='format'")
-        with self.assertRaises(ValueError):offline_maps.enroll_tiles(str(self.map))
+    def test_vector_tiles_enrolled_without_online_assets(self):
+        with sqlite3.connect(self.map) as db:
+            db.execute("UPDATE metadata SET value='pbf' WHERE name='format'")
+            db.execute("UPDATE tiles SET tile_data=?",(b'\x1f\x8b'+b'ABCDEF',))
+        result=offline_maps.enroll_tiles(str(self.map))
+        self.assertTrue(result['vector_tiles_ready'])
+        blob,mime=offline_maps.tile(1,1,0)
+        self.assertEqual(mime,'application/x-protobuf')
+        self.assertTrue(blob.startswith(b'\x1f\x8b'))
     def test_route_is_local_and_geojson(self):
         graph=self.folder/'poland.osrm';graph.write_bytes(b'x');Path(str(graph)+'.mldgr').write_bytes(b'mld')
         offline_maps.enroll_router(str(graph))
