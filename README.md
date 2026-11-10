@@ -442,3 +442,18 @@ sudo doomsday-maps status
 None of these commands repartition drives or download large model weights/map datasets. Existing verified ZIM files and their read-only datasets remain in place. Index and route quality depend on input data. Existing 14-day backup policy, selected-ZIM backups and dual-drive storage are unchanged.
 
 **Verification scope:** 88 local Python tests including archive-index resume, article links, GPS coordinate handling, offline MBTiles TMS row inversion, local-only OSRM API calls, media captions as retrievable evidence and non-destructive ZFS recovery planning. Tests are mocked or use tiny synthetic assets. No claim of verified multi-terabyte indexing, physical hardware rollback, road-route accuracy, or complete media comprehension until those are tested on real hardware and archives.
+
+
+## V6.8 — Article-name-first RAG + classical image matching
+
+The Knowledge Search and **RAG** modes now choose documents **only by indexed ZIM article titles**. Unlike the old blended full-text/media-caption search, unrelated article bodies and arbitrary picture results cannot introduce extra RAG sources. The selected articles are read in small, relevant text chunks; the UI provides direct Kiwix links and shows up to three **raster images that belong to each chosen article** (nine total). Shared images retain separate source-article links when indexed under v6.8. HTML captions and alt text are labelled as author-provided metadata; the text LLM is **not** falsely described as seeing image pixels. If a title is not indexed or doesn't match, the user is told to search Kiwix rather than receiving unrelated RAG content.
+
+**Visual Lens / Similar-image mode** uses classic 64-bit grayscale aHash and dHash plus Hamming distance (Pillow required). No LLM, embedding model or cloud API is needed. With an optional article-title query it only compares that article's linked images; without one it searches article-linked ZIM images (not miscellaneous downloaded files). Image comparison scans in bounded batches to avoid excessive RAM use, with a 200,000-candidate cap per request. This is visual similarity, not object detection or semantic recognition; cropped, heavily edited, or rotated images may not match.
+
+v6.7 databases continue to work for title-first retrieval and legacy image hashes. For full shared-image associations and dHash scores on an archive indexed *before v6.8*, rebuild its metadata index as needed (read-only source ZIM is never changed):
+
+```bash
+sudo doomsday-index-zims add /path/to/verified/archive.zim --rebuild --limit 1000
+```
+
+Re-run `sudo doomsday-index-zims add /path/to/verified/archive.zim --limit 1000` (or let the scheduled index timer resume) until the archive shows `complete`. Do not use `--rebuild` on every invocation: it intentionally restarts the index cursor. The indexer still requires compatible `python3-libzim` and the optional traditional matcher requires Pillow (`python3-pil`). All features work offline after the original ZIMs and packages are installed. This update does not rewrite, move or re-download ZIM files.
