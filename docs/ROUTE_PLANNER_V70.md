@@ -13,7 +13,7 @@ The **DoomsdayOS workspace planner** supports a separate **local vector MBTiles*
 On the Ubuntu machine, when Internet is available **once**, install the pinned MapLibre JS/CSS assets into the OS application directory:
 
 ```bash
-sudo /opt/doomsday-firstboot/scripts/setup-maplibre.sh
+sudo bash /opt/doomsday-firstboot/scripts/setup-maplibre.sh
 ```
 
 No external scripts or tiles are used by the workspace after that. The archive preserves old-fashioned canvas fallback for raster MBTiles. Enroll an existing OpenMapTiles-schema PBF MBTiles file:
