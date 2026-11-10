@@ -1,4 +1,28 @@
 'use strict';
+// Mode switch comes from the installed configuration, never from a remote site.
+async function installModeUI(){
+  try{
+    const r=await fetch('/api/status',{cache:'no-store'});
+    if(!r.ok) return;
+    const cfg=await r.json();
+    if(cfg.ai_enabled!==false)return;
+    document.body.classList.add('core-mode');
+    for(const name of ['chat','translate','models']){
+      document.querySelectorAll('[data-tab="'+name+'"],[data-goto="'+name+'"]').forEach(node=>node.hidden=true);
+    }
+    document.querySelectorAll('input[name="searchMode"][value="rag"],#ragVisualSearch,input[name="lensMode"][value="vision"],input[name="lensMode"][value="auto"]').forEach(node=>{
+      const label=node.closest('label');if(label)label.hidden=true;
+    });
+    const classic=document.querySelector('input[name="lensMode"][value="image_search"]');if(classic)classic.checked=true;
+    const lede=document.querySelector('#home .lede');if(lede)lede.textContent='Browse offline ZIM archives, PDFs, maps, and indexed images without AI or model downloads.';
+    const engine=document.querySelector('#home .info-strip b');if(engine)engine.textContent='Offline indexes + scripted image matching';
+    const research=document.querySelector('#research .lede');if(research)research.textContent='Find indexed ZIM articles by name, import and search PDFs, and open cited source excerpts. No AI model required.';
+    const answer=document.querySelector('#researchAskForm button');if(answer)answer.textContent='Find cited excerpts';
+    const lens=document.querySelector('#lens .lede');if(lens)lens.textContent='Classic hash-based image matching — no model or GPU needed.';
+    if(['chat','translate','models'].includes(location.hash.slice(1)))go('home');
+  }catch(_){ /* Keep offline interface readable while system starts. */ }
+}
+window.addEventListener('DOMContentLoaded',installModeUI);
 const $=id=>document.getElementById(id);
 const nameMap={home:'Overview',search:'Knowledge Search',chat:'Local Chat',lens:'Visual Lens',translate:'Translate',map:'World Maps',models:'AI & Hardware'};
 function go(name){document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active',el.id===name));document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===name));$('pageName').textContent=nameMap[name]||name;location.hash=name==='home'?'':name;if(name==='models')hardware();}
@@ -12,14 +36,45 @@ function link(target,title,url){const a=el('a',title);a.href=url;a.target='_blan
 async function ask(payload){const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d;}
 function displaySources(box,res){if(res.kiwix){const p=el('p');p.append('Offline archive: ');link(p,'Open Kiwix search',res.kiwix);box.appendChild(p);}if(res.sources?.length||res.results?.length){const list=el('ul');(res.sources||res.results).forEach(s=>{const item=el('li');if(s.link)link(item,s.title||s.name,s.link);else item.textContent=s.title||s.name||'Result';if(s.snippet)item.appendChild(el('span',' — '+s.snippet));if(s.match_percent!=null)item.appendChild(el('span',' — '+s.match_percent+'% hash similarity'));list.appendChild(item)});box.appendChild(list);}const photos=res.images?.length?res.images:(res.mode==='classic_ahash_dhash'?res.results?.filter(s=>s.media_link).slice(0,12).map(s=>({image_url:s.media_link,article_link:s.link,title:s.name,alt:s.name})):[]);if(photos?.length){const title=el('h3',res.images?.length?'Images from the selected articles only':'Scripted similar-image matches');box.appendChild(title);const gallery=el('div',null,'article-gallery');for(const src of photos){const tile=el('div',null,'article-photo');const picture=el('img');picture.src=src.image_url;picture.alt=src.alt||src.title||'Article image';picture.loading='lazy';picture.referrerPolicy='no-referrer';tile.appendChild(picture);const caption=el('div');link(caption,src.title||'Open source article',src.article_link);tile.appendChild(caption);gallery.appendChild(tile)}box.appendChild(gallery);}if(res.visual_note)box.appendChild(el('p',res.visual_note,'muted'));if(res.note)box.appendChild(el('p',res.note,'muted'));}
 $('searchForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('searchResult'),q=$('searchQ').value,mode=document.querySelector('[name=searchMode]:checked').value;box.appendChild(el('p','Searching local sources...','muted'));try{const d=await ask({action:mode==='algorithmic'?'search':'chat',mode, prompt:q,visual_rag:$('ragVisualSearch').checked});clear('searchResult');if(d.answer)box.appendChild(el('p',d.answer));displaySources(box,d);}catch(ex){clear('searchResult');error(box,ex.message)}});
-$('chatForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('chatQ').value,mode=document.querySelector('[name=chatMode]:checked').value; if(!q.trim())return;$('chatQ').value='';const log=$('chatLog');const you=el('div',null,'message user');you.appendChild(el('small','YOU'));you.appendChild(el('p',q));log.appendChild(you);const ai=el('div',null,'message assistant');ai.appendChild(el('small','DOOMSDAY AI'));const content=el('p','Generating locally...');ai.appendChild(content);log.appendChild(ai);try{const d=await ask({action:mode==='research'?'research_answer':'chat',mode,prompt:q,visual_rag:$('ragVisualChat').checked});content.textContent=d.answer||'No generated text';displaySources(ai,d);}catch(ex){content.textContent='Error: '+ex.message;}log.scrollTop=log.scrollHeight;});
+$('chatForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('chatQ').value,mode=document.querySelector('[name=chatMode]:checked').value; if(!q.trim())return;$('chatQ').value='';const log=$('chatLog');const you=el('div',null,'message user');you.appendChild(el('small','YOU'));you.appendChild(el('p',q));log.appendChild(you);const ai=el('div',null,'message assistant');ai.appendChild(el('small','DOOMSDAY AI'));const content=el('p','Generating locally...');ai.appendChild(content);log.appendChild(ai);try{let loc=null;
+  if(mode==='agent'&&$('agentUseLocation').checked){
+   if(!navigator.geolocation)throw Error('Browser geolocation unavailable; enter start coordinates instead.');
+   loc=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(p=>resolve({lat:p.coords.latitude,lon:p.coords.longitude}),e=>reject(Error('Location not available: '+e.message)),{enableHighAccuracy:false,timeout:9000}));
+  }
+  const d=await ask({action:mode==='agent'?'agent_chat':mode==='research'?'research_answer':'chat',mode,prompt:q,visual_rag:$('ragVisualChat').checked,browser_location:loc});
+  content.textContent=d.answer||'No generated text';displaySources(ai,d);
+  if(d.tools_used?.length){const u=el('ul');d.tools_used.forEach(t=>u.appendChild(el('li',t.name+(t.ok?' ✓':': '+t.error))));ai.appendChild(u)}
+  if(d.route?.coordinates?.length){const b=el('button','View route in World Maps','secondary');b.type='button';b.addEventListener('click',()=>{mapState.route=d.route.coordinates;go('map');syncVectorOverlay();drawMap();focusRoute(d.route.coordinates);$('routeResult').textContent='AI calculated offline route: '+Math.round(d.route.distance_m/1000*10)/10+' km, '+Math.round(d.route.duration_s/60)+' minutes (no traffic)';});ai.appendChild(b)}
+ }catch(ex){content.textContent='Error: '+ex.message;}log.scrollTop=log.scrollHeight;});
 let currentImage='';
 $('lensImage').addEventListener('change',e=>{const file=e.target.files[0];currentImage='';$('lensPreview').hidden=true;if(!file)return;if(file.size>12*1024*1024){error(clear('lensResult'),'Image exceeds 12 MB');return}const reader=new FileReader();reader.onload=()=>{currentImage=String(reader.result);$('lensPreview').src=currentImage;$('lensPreview').hidden=false};reader.readAsDataURL(file);});
 $('lensForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('lensResult');if(!currentImage){error(box,'Choose an image first.');return}const q=$('lensQ').value;try{let mode=document.querySelector('[name=lensMode]:checked').value;if(mode==='auto'){const r=await ask({action:'route',prompt:q,image:currentImage});box.appendChild(el('p','Decision: '+r.decision.route+' ('+r.decision.method+')','muted'));mode=r.decision.route==='image_search'?'image_search':'vision';}const d=await ask({action:mode==='image_search'?'image_search':'vision',prompt:q,image:currentImage});if(d.answer)box.appendChild(el('p',d.answer));displaySources(box,d);}catch(ex){error(box,ex.message)}});
-$('translateForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('translateResult');try{const d=await ask({action:'translate',prompt:$('translateText').value,language:$('targetLanguage').value});box.appendChild(el('p',d.answer));}catch(ex){error(box,ex.message)}});
+const translatorLanguages={auto:'Automatic detection',en:'English',pl:'Polish',de:'German',fr:'French',es:'Spanish',it:'Italian',pt:'Portuguese',nl:'Dutch',sv:'Swedish',fi:'Finnish',da:'Danish',no:'Norwegian',is:'Icelandic',et:'Estonian',lv:'Latvian',lt:'Lithuanian',cs:'Czech',sk:'Slovak',sl:'Slovenian',hr:'Croatian',bg:'Bulgarian',ro:'Romanian',hu:'Hungarian',el:'Greek',mt:'Maltese',ga:'Irish',ca:'Catalan',ru:'Russian',uk:'Ukrainian',be:'Belarusian',sr:'Serbian',bs:'Bosnian',tr:'Turkish',ar:'Arabic',zh:'Chinese',ja:'Japanese'};
+for(const [code,name] of Object.entries(translatorLanguages)){
+ const s=el('option',name);s.value=code;$('sourceLanguage').appendChild(s);
+ if(code!=='auto'){const target=el('option',name);target.value=name;$('targetLanguage').appendChild(target)}
+}
+$('sourceLanguage').value='auto';$('targetLanguage').value='Polish';
+$('translateForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('translateResult');try{const d=await ask({action:'translate',prompt:$('translateText').value,language:$('targetLanguage').value,source_language:$('sourceLanguage').value});box.appendChild(el('p',d.answer));}catch(ex){error(box,ex.message)}});
+let speechRecorder=null,speechChunks=[],speechStream=null;
+async function transcribeBlob(blob){const box=clear('asrResult');try{
+ if(!blob||blob.size===0||blob.size>16*1024*1024)throw Error('Audio file must be 1 byte to 16 MiB');
+ const resp=await fetch('/api/asr?language='+encodeURIComponent($('sourceLanguage').value),{method:'POST',headers:{'Content-Type':blob.type||'audio/webm'},body:blob});
+ const res=await resp.json();if(!resp.ok)throw Error(res.error||'ASR unavailable');
+ $('translateText').value=res.transcript||'';box.appendChild(el('p',res.transcript||'No recognized speech'));
+ }catch(err){error(box,err.message)} }
+$('asrUpload').addEventListener('click',async()=>{const f=$('asrFile').files[0];if(!f)return error(clear('asrResult'),'Select an audio file first');await transcribeBlob(f)});
+$('asrRecord').addEventListener('click',async()=>{try{
+ if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder)throw Error('Microphone recording is unavailable in this browser');
+ speechStream=await navigator.mediaDevices.getUserMedia({audio:true});speechChunks=[];
+ speechRecorder=new MediaRecorder(speechStream);speechRecorder.ondataavailable=e=>{if(e.data.size)speechChunks.push(e.data)};
+ speechRecorder.onstop=async()=>{speechStream.getTracks().forEach(t=>t.stop());$('asrRecord').disabled=false;$('asrStop').disabled=true;await transcribeBlob(new Blob(speechChunks,{type:speechRecorder.mimeType||'audio/webm'}))};
+ speechRecorder.start();$('asrRecord').disabled=true;$('asrStop').disabled=false;
+ }catch(err){error(clear('asrResult'),err.message)} });
+$('asrStop').addEventListener('click',()=>{if(speechRecorder?.state==='recording')speechRecorder.stop()});
 $('mapSearch').addEventListener('click',()=>{const q=$('mapQ').value.trim()||'world map';window.open('http://localhost:8080/search?pattern='+encodeURIComponent(q),'_blank','noopener,noreferrer');});
 $('locate').addEventListener('click',()=>{const out=$('positionResult');if(!navigator.geolocation){out.textContent='This browser cannot access geolocation. Enter a place manually.';return;}out.textContent='Requesting browser location permission...';navigator.geolocation.getCurrentPosition(p=>{const lat=p.coords.latitude.toFixed(5),lon=p.coords.longitude.toFixed(5);out.textContent='Local coordinates: '+lat+', '+lon+' (accuracy ~'+Math.round(p.coords.accuracy)+' m). Start point filled for offline routing.';$('mapQ').value=lat+', '+lon;$('routeStart').value=lat+', '+lon;mapState.lat=Number(lat);mapState.lon=Number(lon);mapState.z=12;if(mapState.vectorReady){mapState.vector.flyTo({center:[Number(lon),Number(lat)],zoom:12});syncVectorOverlay();}else drawMap();},e=>{out.textContent='Location unavailable or permission denied: '+e.message;},{enableHighAccuracy:false,timeout:9000,maximumAge:60000})});
-async function hardware(){const box=clear('hardware');try{const r=await fetch('/api/status');const d=await r.json();for(const [label,v] of [['Profile',d.profile.tier],['Available RAM',d.profile.ram_free_mib+' MiB'],['Free NVIDIA VRAM',d.profile.vram_free_mib+' MiB'],['Context',d.profile.context+' tokens'],['KV cache',d.profile.kv],['Media index',d.profile.index_mode]]){const card=el('div',null,'spec');card.appendChild(el('small',label));card.appendChild(el('b',v));box.appendChild(card)}}catch(e){error(box,e.message)}}
+async function hardware(){const box=clear('hardware');try{const r=await fetch('/api/status');const d=await r.json();for(const [label,v] of [['Profile',d.profile.tier],['Available RAM',d.profile.ram_free_mib+' MiB'],['Free NVIDIA VRAM',d.profile.vram_free_mib+' MiB'],['Context',d.profile.context+' tokens'],['KV cache',d.profile.kv],['Media index',d.profile.index_mode],['Model loading',d.model_residency?.policy||'unknown'],['Loaded models',(d.model_residency?.loaded||[]).join(', ')||'none'],['Active inference',(d.model_residency?.busy||[]).join(', ')||'idle']]){const card=el('div',null,'spec');card.appendChild(el('small',label));card.appendChild(el('b',v));box.appendChild(card)}$('residencyStatus').textContent='Available RAM budget: '+(d.model_residency?.usable_budget_mib??'unknown')+' MiB. Registered models: '+(d.model_residency?.registered||[]).join(', ')+'. Text + decision share memory when they fit, otherwise switch one at a time.';}catch(e){error(box,e.message)}}
 $('refreshHardware').addEventListener('click',hardware);
 
 // DoomsdayOS offline map UI. No external maps, scripts or geocoding services.
