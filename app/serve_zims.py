@@ -57,7 +57,8 @@ def serve_command(paths,exe,options=None):
     """Ubuntu Kiwix 3.5 lacks --skipInvalid; only use advertised flags."""
     options=supported_options(exe) if options is None else options
     cmd=[exe,'--port=8080']
-    # Do not force 0.0.0.0: some packaged Kiwix versions reject this\n    # wildcard as an IP not assigned to an interface. Use Kiwix's default bind.
+    # Do not force 0.0.0.0: some packaged Kiwix versions reject this
+    # wildcard as an IP not assigned to an interface. Use Kiwix's default bind.
     if '--blockexternal' in options:cmd.append('--blockexternal')
     if '--skipInvalid' in options:cmd.append('--skipInvalid')
     return cmd+list(map(str,paths))
