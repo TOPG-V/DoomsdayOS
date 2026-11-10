@@ -313,6 +313,83 @@ def dispatch(payload):
     return {'answer':answer,'sources':sources,'images':images,'visual_note':visual_note,'kiwix':kiwix_url(q) if mode=='rag' else None,'mode':mode}
 
 
+
+def zim_download_snapshot():
+    """Read-only queue and published archive inventory; never assumes an unmounted path is healthy."""
+    import zim_manager as zm
+    from dual_storage import locations,archive_config
+    from archive_guard import checked_archive,stage_dir
+    cfg=zm.config()
+    archive_list=[]; stages={}; warnings=[]
+    for loc in locations(cfg):
+        key=loc['key']
+        try:
+            c=archive_config(cfg,key)
+            archive,ds=checked_archive(c)
+            stage=stage_dir(c)
+            stages[key]=stage
+            for p in sorted(archive.glob('*.zim')):
+                if p.is_file() and not p.is_symlink():
+                    archive_list.append({'name':p.name,'bytes':p.stat().st_size,'drive':key,'dataset':ds})
+        except (OSError,RuntimeError,KeyError,ValueError) as exc:
+            warnings.append(key+': '+str(exc)[:240])
+    queue=[]
+    for item in zm.read_queue():
+        url=item.get('url','')
+        filename=Path(urllib.parse.urlsplit(url).path).name
+        key=item.get('storage','primary')
+        size=int(item.get('size') or 0)
+        stage=stages.get(key)
+        partial=0
+        if stage is not None and filename:
+            # Existing downloader writes filename.zim.part; stat only expected basename.
+            candidate=stage/(filename+'.part')
+            try:
+                if candidate.is_file() and not candidate.is_symlink():partial=candidate.stat().st_size
+            except OSError:pass
+        published=any(a['name']==filename and a['drive']==key for a in archive_list)
+        status=item.get('status','unknown')
+        percent=(round(min(100,partial*100/size),1) if size>0 else None)
+        if status in ('done','downloaded') and published:percent=100
+        queue.append({'name':item.get('title') or filename,'filename':filename,
+                      'drive':key,'status':status,'bytes_total':size,
+                      'bytes_received':partial,'percent':percent,
+                      'published':published,'error':str(item.get('error') or '')[:240],
+                      'backup':bool(item.get('backup'))})
+    return {'queue':queue,'downloaded':archive_list,'warnings':warnings}
+
+def enqueue_direct_zim(payload):
+    import zim_manager as zm
+    from direct_links import official_direct_url
+    import subprocess
+    url=payload.get('url','')
+    sha=payload.get('sha256','')
+    size=payload.get('size')
+    if not isinstance(url,str) or len(url)>1000:raise ValueError('Invalid URL')
+    if not isinstance(sha,str) or not re.fullmatch(r'[0-9a-fA-F]{64}',sha):
+        raise ValueError('SHA-256 must contain exactly 64 hexadecimal characters')
+    if type(size) is not int or not 1<=size<=20*1024**4:
+        raise ValueError('Specify the known total ZIM size in bytes (1 to 20 TiB)')
+    safe=official_direct_url(url)
+    if urllib.parse.urlsplit(url).query or urllib.parse.urlsplit(url).fragment:
+        raise ValueError('Direct ZIM URL must not include a query or fragment')
+    # Require a known, mounted and enrolled primary archive and staging filesystem.
+    from archive_guard import checked_archive,stage_dir
+    cfg=zm.config()
+    checked_archive(cfg);stage_dir(cfg)
+    name=Path(urllib.parse.urlsplit(safe).path).name
+    if not name.endswith('.zim'):raise ValueError('Invalid ZIM filename')
+    existing=zm.read_queue()
+    if any(x.get('url')==safe for x in existing):
+        raise ValueError('Archive URL is already queued')
+    zm.enqueue([{'id':safe,'title':name,'url':safe,'sha256':sha.lower(),
+                 'size':size,'backup':False}])
+    # Wake the existing verified downloader rather than downloading in HTTP request.
+    attempt=subprocess.run(['systemctl','start','--no-block','doomsday-zim-download.service'],
+                           capture_output=True,text=True,timeout=12,check=False)
+    return {'queued':name,'worker_started':attempt.returncode==0,
+            'note':('Downloader requested' if attempt.returncode==0 else 'Queued; automatic timer will retry. '+attempt.stderr[:120])}
+
 class Handler(BaseHTTPRequestHandler):
     server_version='DoomsdayVaultAI/0.1'
     def _reply(self,body,code=200,ctype='application/json; charset=utf-8',extra_headers=None):
@@ -328,6 +405,9 @@ class Handler(BaseHTTPRequestHandler):
         p=urllib.parse.urlsplit(self.path)
         if p.path=='/health':return self._json({'ok':True})
         if p.path=='/api/status':return self._json(dispatch({'action':'status'}))
+        if p.path=='/api/zims/downloads':
+            try:return self._json(zim_download_snapshot())
+            except (OSError,ValueError,RuntimeError,KeyError) as exc:return self._json({'error':str(exc)[:250]},503)
         if p.path=='/api/models/catalog':
             from model_catalog import catalog
             return self._json({'models':list(catalog().values()),'manual_start':True,'automatic_downloads':False})
@@ -396,9 +476,19 @@ class Handler(BaseHTTPRequestHandler):
         return origin==expected and self.headers.get('Host','').split(':')[0] in ('localhost','127.0.0.1')
 
     def do_POST(self):
-        if urllib.parse.urlsplit(self.path).path not in ('/api/ask','/api/research/upload','/api/research/text','/api/asr'):
+        if urllib.parse.urlsplit(self.path).path not in ('/api/ask','/api/research/upload','/api/research/text','/api/asr','/api/zims/enqueue'):
             return self._json({'error':'Not found'},404)
         if not self._safe_origin():return self._json({'error':'Cross-origin requests are blocked'},403)
+        if urllib.parse.urlsplit(self.path).path=='/api/zims/enqueue':
+            try:
+                if self.headers.get('Content-Type','').split(';')[0].strip().lower()!='application/json':raise ValueError('JSON required')
+                size=int(self.headers.get('Content-Length','0'))
+                if not 1<=size<=4096:raise ValueError('Invalid request length')
+                payload=json.loads(self.rfile.read(size))
+                if not isinstance(payload,dict):raise ValueError('Expected JSON object')
+                return self._json(enqueue_direct_zim(payload),201)
+            except (ValueError,KeyError,TypeError) as exc:return self._json({'error':str(exc)[:240]},400)
+            except (OSError,RuntimeError) as exc:return self._json({'error':str(exc)[:240]},503)
         if urllib.parse.urlsplit(self.path).path=='/api/asr':
             try:
                 if not ai_enabled():raise RuntimeError('ASR is disabled in Core mode; install Full mode')
