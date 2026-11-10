@@ -54,3 +54,8 @@
 .manual-location-panel>label{display:block;margin:14px 0 8px}
 .manual-location-panel .actions{margin-top:10px}
 .manual-location-panel #manualLocationStatus{margin:12px 0 0;overflow-wrap:anywhere}
+
+/* v7.5 drag/drop: keyboard-operable, modest memory footprint. */
+.drop-zone{border:2px dashed #5b806c;border-radius:13px;background:rgba(90,140,112,.08);padding:25px 15px;text-align:center;cursor:pointer;line-height:1.65;transition:background .1s ease,border-color .1s ease}
+.drop-zone small{color:#a4b9b2}.drop-zone.drag-hover,.drop-zone:focus-visible{outline:2px solid #d2f3a8;outline-offset:3px;background:rgba(125,193,149,.16);border-color:#a4e0b9}
+.drop-zone[aria-busy=true]{opacity:.7;pointer-events:none}
