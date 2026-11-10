@@ -1,0 +1,13 @@
+[Unit]
+Description=DoomsdayOS llama.cpp decision inference (opt-in, local only)
+After=local-fs.target
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/llama_runtime.py serve decision
+Restart=on-failure
+RestartSec=15
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+[Install]
+WantedBy=multi-user.target
