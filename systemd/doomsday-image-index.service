@@ -1,0 +1,13 @@
+[Unit]
+Description=DoomsdayOS optional low-priority local image indexing
+ConditionPathExists=/etc/doomsday-vault/media-index.json
+After=local-fs.target
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/media_index.py run
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=15%
+MemoryMax=512M
+NoNewPrivileges=true
+ProtectSystem=full
