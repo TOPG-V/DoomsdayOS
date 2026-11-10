@@ -59,3 +59,22 @@
 .drop-zone{border:2px dashed #5b806c;border-radius:13px;background:rgba(90,140,112,.08);padding:25px 15px;text-align:center;cursor:pointer;line-height:1.65;transition:background .1s ease,border-color .1s ease}
 .drop-zone small{color:#a4b9b2}.drop-zone.drag-hover,.drop-zone:focus-visible{outline:2px solid #d2f3a8;outline-offset:3px;background:rgba(125,193,149,.16);border-color:#a4e0b9}
 .drop-zone[aria-busy=true]{opacity:.7;pointer-events:none}
+
+
+/* Archive manager — compact, responsive, high-contrast. */
+.download-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.download-stats .query-panel{margin:0;min-height:115px;align-content:center}
+.download-stats small{font-size:11px;color:var(--muted);letter-spacing:.1em}
+.download-stats strong{font-size:34px;line-height:1;color:var(--accent)}
+.download-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.download-heading h2{margin:0}.zim-row{padding:20px 0;border-top:1px solid var(--line)}
+.zim-row:first-child{border-top:0}.zim-row strong{overflow-wrap:anywhere}
+.zim-state{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mint);background:#1d342f;border:1px solid #31574b;border-radius:99px;padding:5px 10px;flex-shrink:0}
+.zim-row progress{display:block;width:100%;height:13px;accent-color:var(--accent);margin:15px 0 9px}
+.zim-row progress::-webkit-progress-bar{background:#293340;border-radius:99px}
+.zim-row progress::-webkit-progress-value{background:var(--accent);border-radius:99px}
+.zim-row p{font-size:12px;margin:8px 0}
+.zim-inventory{padding:13px 0;border-bottom:1px solid var(--line);font-size:13px;overflow-wrap:anywhere}
+.zim-inventory small{color:var(--muted);white-space:nowrap}
+#zimAddForm{display:grid;gap:12px}#zimAddForm button{justify-self:start;margin-top:12px}
+@media(max-width:680px){.download-stats{grid-template-columns:1fr}.download-heading{align-items:flex-start}.zim-inventory{flex-wrap:wrap}}
