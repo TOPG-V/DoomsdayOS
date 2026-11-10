@@ -238,6 +238,16 @@ def content_range_ok(h,start):
     m=re.match(r'bytes (\d+)-(\d+)/(\d+|\*)$',h or '')
     return bool(m and int(m.group(1))==start)
 
+def same_archive_source(old, new):
+    """Permit HTTPS mirror -> direct transitions only for the identical ZIM path."""
+    try:
+        a,b=urllib.parse.urlsplit(safe_url(old)),urllib.parse.urlsplit(safe_url(new))
+        return (a.path==b.path and a.path.startswith('/zim/') and
+                not a.query and not b.query and a.path.lower().endswith('.zim'))
+    except (ValueError,TypeError):
+        return False
+
+
 def download(item, dst, opener=request):
     url=safe_url(item['url']); name=Path(urllib.parse.urlsplit(url).path).name
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*\.zim',name):raise ValueError('Unexpected filename')
@@ -254,15 +264,27 @@ def download(item, dst, opener=request):
     if meta.exists():
         try:saved=json.loads(meta.read_text())
         except (ValueError,OSError):saved={}
-    if part.exists() and (saved.get('url')!=url or saved.get('sha256')!=expected):
-        # Unknown partials should not be blindly appended to.
-        raise ValueError('Partial file does not match URL/checksum metadata; investigate manually')
+    switched_source=bool(saved.get('url') and saved['url']!=url)
+    if part.exists() and (saved.get('sha256')!=expected or
+            (switched_source and not same_archive_source(saved['url'],url)) or
+            not saved.get('url')):
+        # A partial from an unknown file or an unrelated host/path is unsafe.
+        raise ValueError('Partial file does not match trusted archive URL/checksum metadata')
     offset=part.stat().st_size if part.exists() else 0
+    if offset and item.get('size') and offset==int(item['size']):
+        # A complete download interrupted just before publishing needs no HTTP.
+        if sha256(part)==expected:
+            os.replace(part,final);meta.unlink(missing_ok=True)
+            return final
+        raise ValueError('Complete staged part has a SHA-256 mismatch; preserving for investigation')
     hdr={}
     if offset:
         hdr['Range']=f'bytes={offset}-'
-        if saved.get('etag'):hdr['If-Range']=saved['etag']
-        elif saved.get('last_modified'):hdr['If-Range']=saved['last_modified']
+        # Mirror validators are not transferable between hosts.  Resume by
+        # byte position only; the final whole-file digest authenticates it.
+        if not switched_source:
+            if saved.get('etag'):hdr['If-Range']=saved['etag']
+            elif saved.get('last_modified'):hdr['If-Range']=saved['last_modified']
     r=opener(url,hdr)
     with r:
         status=getattr(r,'status',200)
@@ -272,18 +294,27 @@ def download(item, dst, opener=request):
             r=opener(url,{})
         with r:
             meta_data={'url':url,'sha256':expected,'etag':r.headers.get('ETag'),'last_modified':r.headers.get('Last-Modified')}
-            if saved.get('etag') and offset and meta_data['etag'] and saved['etag']!=meta_data['etag']:
+            if not switched_source and saved.get('etag') and offset and meta_data['etag'] and saved['etag']!=meta_data['etag']:
                 raise ValueError('ETag changed during resume; refusing to append')
             atomic_json(meta,meta_data)
             free=disk_free(dst); est=int(item.get('size') or 0)
             mult=zfs_copies(dst); remaining=max(0,est-offset)
             if est and free < remaining*mult+RESERVE:
                 raise ValueError(f'Insufficient ZIM capacity: need {size_text(remaining*mult+RESERVE)} free, have {size_text(free)}')
+            from transfer_optimizer import RateLimiter, get_budget
+            # A 48-MiB benchmark is performed only on the writable staging
+            # dataset, at most fortnightly. A failed test leaves the archive safe.
+            try:
+                write_cap=get_budget(dst,auto=Path('/run/systemd/system').is_dir())
+            except (OSError,ValueError):
+                write_cap=16  # conservative default for unknown/absent drive
+            pace=RateLimiter(write_cap)
             with open(part,'ab' if offset else 'wb') as f:
                 while True:
                     b=r.read(CHUNK)
                     if not b:break
                     f.write(b)
+                    pace.account(len(b))
                 f.flush();os.fsync(f.fileno())
     if item.get('size') and part.stat().st_size!=int(item['size']):
         raise ValueError('Downloaded byte size differs from catalog; retained .part for retry')
@@ -1070,13 +1101,26 @@ def _dual_setup(input_fn=input):
 
 def main():
     p=argparse.ArgumentParser()
-    p.add_argument('command',choices=['wizard','browse','run','status','enqueue-url','backups','dual-setup','optimize','import-torrent'])
+    p.add_argument('command',choices=['wizard','browse','run','status','enqueue-url','backups','dual-setup','optimize','import-torrent','direct-check','direct-apply','direct-list','tune-speed','speed-status','torrent-batch','torrent-pack'])
     p.add_argument('--url');p.add_argument('--sha256');p.add_argument('--size',type=int,default=0)
     p.add_argument('--torrent-file');p.add_argument('--storage',choices=['primary','secondary'],default='primary')
+    p.add_argument('--batch-file',help='JSON list of local .torrent files, SHA-256 digests and target drives')
+    p.add_argument('--torrent-dir',help='Extracted original Zim/ torrent folder')
+    p.add_argument('--max-torrents',type=int,default=4,help='Maximum simultaneous torrents (capped at 4)')
+    p.add_argument('--staging',help='Optional staging folder for speed benchmark')
+    p.add_argument('--source',choices=['queue','bundle'],default='queue',help='Select queue or all 39 manifest entries for direct check')
     a=p.parse_args()
     if a.command=='wizard':interactive_wizard()
     elif a.command=='browse':interactive_catalog_wizard()
     elif a.command=='backups':select_existing_backups()
+    elif a.command.startswith('direct-'):
+        from direct_links import main as direct_main
+        import sys as _sys
+        old_args=_sys.argv
+        try:
+            _sys.argv=[old_args[0],a.command[7:],'--source',a.source]
+            direct_main()
+        finally:_sys.argv=old_args
     elif a.command=='dual-setup':dual_setup()
     elif a.command=='optimize':optimize_two_drives()
     elif a.command=='run':run_queue()
@@ -1088,6 +1132,36 @@ def main():
                   'drive='+x.get('storage','primary'),
                   'backup='+('selected' if x.get('backup') else 'excluded'),
                   x.get('backup_result',''),x.get('error',''))
+    elif a.command=='tune-speed':
+        from transfer_optimizer import tune, budget_mib_s
+        cfg=config()
+        for path in dict.fromkeys([a.staging or cfg.get('staging_dir'),
+                                       cfg.get('staging_dir_2') if not a.staging else None]):
+            if not path:continue
+            ds,result=tune(Path(path))
+            print(f'{ds}: {result["write_mib_s"]} MiB/s write, safe download cap {budget_mib_s(result["write_mib_s"])} MiB/s')
+    elif a.command=='speed-status':
+        from transfer_optimizer import read_policy, budget_mib_s, dataset_identity
+        cfg=config();records=read_policy()['datasets']
+        for path in (cfg.get('staging_dir'),cfg.get('staging_dir_2')):
+            if not path:continue
+            try:
+                ds=dataset_identity(Path(path))
+                info=records.get(ds,{})
+                print(ds,'measured write:',info.get('write_mib_s','not measured'),
+                      'MiB/s; safe cap:',budget_mib_s(info.get('write_mib_s',0)),
+                      'MiB/s; torrent observed:',info.get('torrent_mib_s','unknown'),'MiB/s')
+            except (OSError,ValueError) as e:print('Drive not ready:',e)
+    elif a.command=='torrent-pack':
+        if not a.torrent_dir:p.error('torrent-pack requires --torrent-dir PATH')
+        from torrent_import import run_torrent_pack
+        result=run_torrent_pack(a.torrent_dir,max_parallel=a.max_torrents)
+        print('SHA-verified torrents published:',len(result))
+    elif a.command=='torrent-batch':
+        if not a.batch_file:p.error('torrent-batch requires --batch-file PATH')
+        from torrent_import import run_torrent_batch
+        result=run_torrent_batch(a.batch_file,max_parallel=a.max_torrents)
+        print('SHA-verified archives published:',len(result))
     elif a.command=='import-torrent':
         if not a.torrent_file or not a.sha256:p.error('--torrent-file and --sha256 are required')
         from torrent_import import run_torrent_import
