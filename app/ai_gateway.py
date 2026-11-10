@@ -328,6 +328,9 @@ class Handler(BaseHTTPRequestHandler):
         p=urllib.parse.urlsplit(self.path)
         if p.path=='/health':return self._json({'ok':True})
         if p.path=='/api/status':return self._json(dispatch({'action':'status'}))
+        if p.path=='/api/models/catalog':
+            from model_catalog import catalog
+            return self._json({'models':list(catalog().values()),'manual_start':True,'automatic_downloads':False})
         if p.path=='/api/research/status':return self._json(research.status())
         if p.path=='/api/research/search':
             q=urllib.parse.parse_qs(p.query).get('q',[''])[0][:8000]
