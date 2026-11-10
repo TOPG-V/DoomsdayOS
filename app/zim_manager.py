@@ -535,71 +535,103 @@ def _backup_destination_for_item(item,cfg):
     return cfg.get('backup_dir'),cfg.get('backup_dataset')
 
 
-def run_queue():
-    """Download originals first, then backup selected ZIMs after staging is freed.
+@contextlib.contextmanager
+def exclusive_download_worker():
+    """Only one downloader/optimizer can modify placement at once.
 
-    Download and backup errors never delete the sole verified original. Every
-    destination is revalidated before writing.  An interrupted backup stays in
-    .copying and needs explicit inspection before retrying.
+    A DIFFERENT short-lived lock protects queue JSON. A user may change backup
+    selections while the network transfer is running without waiting hours.
     """
-    cfg=config()
-    if not cfg.get('immutable_zims'):
-        raise RuntimeError('Immutable archive not configured; run sudo ./scripts/prepare-zims.sh')
-    from dual_storage import verify_locations
-    verify_locations(cfg)
-    downloaded=0
+    BASE.mkdir(mode=0o700,parents=True,exist_ok=True)
+    with (BASE/'zim-download-worker.lock').open('a+') as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError('ZIM download worker already active. Pause it before changing two-drive placement.')
+        try:yield
+        finally:fcntl.flock(handle.fileno(),fcntl.LOCK_UN)
+
+
+def _queue_update(url, **updates):
+    """Modify one queue entry without overwriting newer backup choices."""
     with locked_queue():
-        q=read_queue()
-        for item in q:
-            if item.get('status') in ('done','downloaded'):continue
+        current=read_queue()
+        entry=next((x for x in current if x.get('url')==url),None)
+        if entry is None:
+            raise RuntimeError('ZIM entry removed while downloading; refusing stale queue write')
+        entry.update(updates)
+        atomic_json(queue_path(),current)
+        return dict(entry)
+
+
+def run_queue():
+    """Verify originals first, then optional backups; allow live backup choices.
+
+    Network writes use an exclusive WORKER lock, while queue edits hold only a
+    short queue JSON lock. A second downloader cannot race on .part files.
+    Original ZIMs are published only after independent SHA-256 checks. Once the
+    full original package is complete, backups run separately to free staging.
+    """
+    from dual_storage import verify_locations, archive_config
+    with exclusive_download_worker():
+        cfg=config()
+        if not cfg.get('immutable_zims'):
+            raise RuntimeError('Immutable archive not configured; run sudo ./scripts/prepare-zims.sh')
+        verify_locations(cfg)
+        urls=[x['url'] for x in read_queue()]
+        for url in urls:
+            with locked_queue():
+                q=read_queue()
+                current=next((x for x in q if x.get('url')==url),None)
+                if current is None or current.get('status') in ('done','downloaded'):
+                    continue
+                current['status']='downloading'
+                atomic_json(queue_path(),q)
+                item=dict(current)
             try:
                 if cfg.get('zim_dir_2') and item.get('storage') not in ('primary','secondary'):
                     raise ValueError('Two-drive mode requires sudo doomsday-zims optimize before downloading')
-                item['status']='downloading';atomic_json(queue_path(),q)
-                out,new=_queue_original(item,cfg)
-                if new:
-                    downloaded+=1
-                    # Publish completed archives to the offline browser promptly,
-                    # without waiting for the entire hundreds-of-GB queue.
-                    if Path('/run/systemd/system').exists():
-                        subprocess.run(['systemctl','restart','--no-block','doomsday-kiwix.service'],
-                                       check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-                item['status']='downloaded';item['error']=''
-                atomic_json(queue_path(),q)
+                _,new=_queue_original(item,cfg)
+                _queue_update(url,status='downloaded',sha256=item['sha256'],error='')
+                if new and Path('/run/systemd/system').exists():
+                    # A newly published ZIM becomes available in Kiwix immediately
+                    # without waiting for every archive (hundreds of GB) to finish.
+                    subprocess.run(['systemctl','restart','--no-block','doomsday-kiwix.service'],
+                                   check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             except Exception as e:
-                item['status']='retry';item['error']=str(e)[:600]
-                print('Original pending retry:',item.get('title'),item['error'],file=sys.stderr)
-                atomic_json(queue_path(),q)
-        # Only make optional backups after ALL originals completed. This avoids
-        # filling pools with redundant copies before huge staging files complete.
+                error=str(e)[:600]
+                _queue_update(url,status='retry',error=error)
+                print('Original pending retry:',item.get('title'),error,file=sys.stderr)
+        q=read_queue()
         originals_ready=all(x.get('status') in ('done','downloaded') for x in q)
         if not originals_ready:
             print('Some originals are incomplete. Deferring optional backups to protect space.')
-        else:
-            from dual_storage import archive_config
-            for item in q:
-                if item.get('status')!='downloaded':continue
-                try:
-                    if item.get('backup'):
-                        bd,ds=_backup_destination_for_item(item,cfg)
-                        if not bd:raise ValueError('No backup destination; select one with sudo doomsday-zims backups')
-                        c=archive_config(cfg,item.get('storage','primary'))
-                        archive=Path(c['zim_dir'])/Path(urllib.parse.urlsplit(item['url']).path).name
-                        if not archive.is_file() or sha256(archive)!=item.get('sha256'):
-                            raise ValueError('Original failed checksum verification before backing up')
-                        from archive_guard import exact_dataset
-                        if cfg.get('zim_dir_2') and exact_dataset(Path(bd))!=ds:
-                            raise ValueError('Opposite-pool backup dataset unmounted; not copying to wrong disk')
-                        bcfg={**cfg,'backup_dir':str(bd),'backup_dataset':ds}
-                        item['backup_result']=backup_zim(archive,bd,bcfg)
-                    else:item['backup_result']='excluded-by-user'
-                    item['status']='done';item['error']=''
-                except Exception as e:
-                    # Still a valid downloaded original; do not re-download it.
-                    item['backup_result']='deferred:'+str(e)[:240]
-                    item['error']='BACKUP: '+str(e)[:500]
-                    print('Optional backup deferred:',item.get('title'),item['error'],file=sys.stderr)
-                atomic_json(queue_path(),q)
+            return
+        # Reread updated user backup settings after the original downloads.
+        cfg=config()
+        for url in urls:
+            item=next((x for x in read_queue() if x.get('url')==url),None)
+            if item is None or item.get('status')!='downloaded':continue
+            try:
+                if item.get('backup'):
+                    bd,ds=_backup_destination_for_item(item,cfg)
+                    if not bd:
+                        raise ValueError('No backup destination; select one with sudo doomsday-zims backups')
+                    c=archive_config(cfg,item.get('storage','primary'))
+                    archive=Path(c['zim_dir'])/Path(urllib.parse.urlsplit(url).path).name
+                    if not archive.is_file() or sha256(archive)!=item.get('sha256'):
+                        raise ValueError('Original failed checksum verification before backing up')
+                    from archive_guard import exact_dataset
+                    if cfg.get('zim_dir_2') and exact_dataset(Path(bd))!=ds:
+                        raise ValueError('Opposite-pool backup dataset unmounted; not copying to wrong disk')
+                    bcfg={**cfg,'backup_dir':str(bd),'backup_dataset':ds}
+                    outcome=backup_zim(archive,bd,bcfg)
+                else:outcome='excluded-by-user'
+                _queue_update(url,status='done',backup_result=outcome,error='')
+            except Exception as e:
+                message='BACKUP: '+str(e)[:500]
+                _queue_update(url,status='downloaded',backup_result='deferred:'+str(e)[:240],error=message)
+                print('Optional backup deferred:',item.get('title'),message,file=sys.stderr)
 
 def load_preset(name, manifest_path=None):
     """Return exact archived collection entries, never an arbitrary entire OPDS catalog."""
@@ -935,8 +967,16 @@ def select_existing_backups(input_fn=input):
 
 
 def optimize_two_drives(input_fn=input, selected_urls=None):
+    """Hold the worker lock so no active transfer changes pools mid-plan."""
+    with exclusive_download_worker():
+        return _optimize_two_drives(input_fn=input_fn,selected_urls=selected_urls)
+
+
+def _optimize_two_drives(input_fn=input, selected_urls=None):
     """User-reviewed fit plan, retaining existing files and partial downloads."""
     from dual_storage import verify_locations, plan_originals, backup_plan
+    # Don't run optimizations while a .part file is actively being written.
+    # A worker lock is checked again before committing the plan.
     cfg=config()
     if not cfg.get('zim_dir_2'):
         print('No second ZFS pool configured. Run sudo doomsday-zims dual-setup first.')
@@ -981,6 +1021,8 @@ def optimize_two_drives(input_fn=input, selected_urls=None):
         print('No changes made.');return []
     with locked_queue():
         current=read_queue()
+        if any(x.get('status')=='downloading' for x in current):
+            raise RuntimeError('A download is active; stop it before applying a new two-drive plan')
         # If another queue entry arrived meanwhile, refuse rather than plan stale list.
         if {x['url'] for x in current}!={x['url'] for x in q}:
             raise RuntimeError('ZIM queue changed. Rerun optimization before saving.')
@@ -996,6 +1038,11 @@ def optimize_two_drives(input_fn=input, selected_urls=None):
 
 
 def dual_setup(input_fn=input):
+    with exclusive_download_worker():
+        return _dual_setup(input_fn=input_fn)
+
+
+def _dual_setup(input_fn=input):
     from dual_storage import create_dedicated,pool_list,pool_name
     cfg=config()
     try:
@@ -1023,8 +1070,9 @@ def dual_setup(input_fn=input):
 
 def main():
     p=argparse.ArgumentParser()
-    p.add_argument('command',choices=['wizard','browse','run','status','enqueue-url','backups','dual-setup','optimize'])
+    p.add_argument('command',choices=['wizard','browse','run','status','enqueue-url','backups','dual-setup','optimize','import-torrent'])
     p.add_argument('--url');p.add_argument('--sha256');p.add_argument('--size',type=int,default=0)
+    p.add_argument('--torrent-file');p.add_argument('--storage',choices=['primary','secondary'],default='primary')
     a=p.parse_args()
     if a.command=='wizard':interactive_wizard()
     elif a.command=='browse':interactive_catalog_wizard()
@@ -1040,6 +1088,10 @@ def main():
                   'drive='+x.get('storage','primary'),
                   'backup='+('selected' if x.get('backup') else 'excluded'),
                   x.get('backup_result',''),x.get('error',''))
+    elif a.command=='import-torrent':
+        if not a.torrent_file or not a.sha256:p.error('--torrent-file and --sha256 are required')
+        from torrent_import import run_torrent_import
+        print('Publishing verified torrent archive:',run_torrent_import(a.torrent_file,a.sha256,a.storage))
     elif a.command=='enqueue-url':
         if not a.url or not a.sha256:p.error('--url and --sha256 required')
         enqueue([{'id':a.url,'title':Path(urllib.parse.urlsplit(a.url).path).name,'url':a.url,
