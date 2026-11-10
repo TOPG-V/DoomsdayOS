@@ -1,0 +1,7 @@
+[Unit]
+Description=Record incomplete boots for portable recovery advisor
+[Timer]
+OnBootSec=45s
+Unit=doomsday-recovery-watch-start.service
+[Install]
+WantedBy=timers.target
