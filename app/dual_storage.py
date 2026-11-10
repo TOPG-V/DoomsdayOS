@@ -21,23 +21,42 @@ def pool_name(dataset):
     return dataset.split('/')[0]
 
 
+def _extra_locations():
+    # Fleet enrollment records exact imported ZFS pools, not raw /dev disk ids.
+    try:
+        from storage_fleet import read_fleet
+        rows=read_fleet()
+    except FileNotFoundError:
+        rows=[]
+    return [{'key':x['key'],'archive':Path(x['zim_dir']),'archive_ds':x['zim_dataset'],
+             'stage':Path(x['staging_dir']),'stage_ds':x['staging_dataset'],
+             'backup':Path(x['backup_dir']),'backup_ds':x['backup_dataset']} for x in rows]
+
 def locations(cfg):
     main={'key':'primary','archive':Path(cfg['zim_dir']), 'archive_ds':cfg['zim_dataset'],
-          'stage':Path(cfg['staging_dir']),'stage_ds':cfg['staging_dataset']}
-    if not cfg.get('zim_dir_2'):return [main]
+          'stage':Path(cfg['staging_dir']),'stage_ds':cfg['staging_dataset'],
+          'backup':Path(cfg.get('dual_backup_primary_dir') or cfg.get('backup_dir') or '/nonexistent'),
+          'backup_ds':cfg.get('dual_backup_primary_dataset') or cfg.get('backup_dataset','')}
+    if not cfg.get('zim_dir_2'):return [main] + _extra_locations()
     second={'key':'secondary','archive':Path(cfg['zim_dir_2']), 'archive_ds':cfg['zim_dataset_2'],
-            'stage':Path(cfg['staging_dir_2']),'stage_ds':cfg['staging_dataset_2']}
-    return [main, second]
+            'stage':Path(cfg['staging_dir_2']),'stage_ds':cfg['staging_dataset_2'],
+            'backup':Path(cfg.get('dual_backup_secondary_dir') or '/nonexistent'),
+            'backup_ds':cfg.get('dual_backup_secondary_dataset','')}
+    return [main, second] + _extra_locations()
 
 
 def archive_config(cfg, key):
     if key in ('primary',None):return cfg.copy()
-    if key!='secondary' or not cfg.get('zim_dir_2'):
-        raise ValueError('Secondary ZIM storage is not enrolled')
-    out=cfg.copy()
-    for field in ('zim_dir','zim_dataset','staging_dir','staging_dataset'):
-        out[field]=cfg[field+'_2']
-    return out
+    if key=='secondary' and cfg.get('zim_dir_2'):
+        out=cfg.copy()
+        for field in ('zim_dir','zim_dataset','staging_dir','staging_dataset'):
+            out[field]=cfg[field+'_2']
+        return out
+    for x in _extra_locations():
+        if x['key']==key:
+            return {**cfg,'zim_dir':str(x['archive']),'zim_dataset':x['archive_ds'],
+                    'staging_dir':str(x['stage']),'staging_dataset':x['stage_ds']}
+    raise ValueError('ZIM storage key is not enrolled: '+str(key)[:40])
 
 
 def verify_locations(cfg):
@@ -51,7 +70,7 @@ def verify_locations(cfg):
         if pool!=pool_name(loc['stage_ds']):
             raise ValueError('Each ZIM staging dataset must belong to its archive pool')
         pools.append(pool)
-    if len(set(pools))!=len(pools):raise ValueError('Dual archives must use distinct ZFS pools')
+    if len(locs)>50 or len(set(pools))!=len(pools):raise ValueError('ZIM archive pools must be distinct (maximum 50)')
     return locs
 
 
