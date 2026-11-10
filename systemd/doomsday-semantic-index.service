@@ -1,0 +1,17 @@
+[Unit]
+Description=Optional incremental local EmbeddingGemma 2 RAG indexing
+After=doomsday-zim-index.service doomsday-model-manager.service
+ConditionPathExists=/var/lib/doomsday-vault/zim-fts.sqlite
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/semantic_rag.py index
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=15min
+MemoryMax=1200M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/doomsday-vault/research
+[Install]
+WantedBy=multi-user.target
