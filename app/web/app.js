@@ -409,7 +409,7 @@ $('runDiagnostic').addEventListener('click',async()=>{
 
 
 // Archive Download Manager: DOM text nodes only (no user-provided HTML).
-let zimPollBusy=false;
+var zimPollBusy=false;
 function formattedBytes(n){if(!Number.isFinite(n)||n<0)return 'Unknown size';const u=['B','KiB','MiB','GiB','TiB'];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++}return n.toFixed(i?1:0)+' '+u[i]}
 async function refreshZims(){
  if(zimPollBusy||!$('zimQueue'))return;
