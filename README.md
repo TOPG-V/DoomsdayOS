@@ -353,3 +353,92 @@ sudo doomsday-recovery mark-good --snapshot rpool/ROOT/YOUR_ROOT@YOUR_SNAPSHOT
 ### Storage and safety preserved
 
 The V6.5 2-drive planner, explicit single-copy opt-in, selective ZIM backups, read-only published archives, SHA-256 verification and 14-day backup services remain unchanged. The new interface cannot modify ZFS properties; the new recovery commands do not erase or roll back the OS. Nothing in this release should be considered a proven emergency recovery system until tested on spare hardware.
+
+## V6.7 — Resumable ZIM RAG, offline maps/routing, and boot-failure recovery staging
+
+This release implements the **locally testable components** of the last three requested features. It does not claim that a broken live ZFS root can safely reimage or reconfigure its own UEFI bootloader. Read the limitations before enabling a disaster-recovery plan.
+
+### 1. Automatic fatal-boot detection and safer recovery
+
+Two boot timers record the current kernel boot ID (at 45 seconds) and assess root pool health (after 4 minutes). If three consecutive recorded boots fail to reach the healthy stage, the system **automatically creates a recovery plan**. It ranks snapshots, prefers an explicitly marked last-known-good snapshot on the same ZFS pool GUID, and preserves current root/EFI files without overwriting them. This will only detect failures occurring after the first watchdog unit has started, and it is not a full firmware or early-boot failure detector.
+
+```bash
+sudo doomsday-recovery report
+sudo doomsday-recovery mark-good --snapshot 'rpool/ROOT/ubuntu@YOUR_EXISTING_SNAPSHOT'
+sudo doomsday-recovery-watch status
+sudo doomsday-recovery-watch plan
+```
+
+Marking a snapshot is **not** evidence that it can boot. Test a spare-disk restore. From a **separate trusted recovery environment**, and only with a separately imported target ZFS pool, you can inspect a non-destructive copy operation:
+
+```bash
+sudo doomsday-recovery-watch check-receive --snapshot 'rpool/ROOT/ubuntu@YOUR_EXISTING_SNAPSHOT' --target 'sparepool/recovery/ubuntu'
+```
+
+After independent verification of the pool identity and capacity, explicitly receive the snapshot into a **new, unused** dataset:
+
+```bash
+sudo doomsday-recovery-watch receive-spare --snapshot 'rpool/ROOT/ubuntu@YOUR_EXISTING_SNAPSHOT' --target 'sparepool/recovery/ubuntu' --confirm 'RECEIVE TO SPARE'
+```
+
+This is a ZFS dataset receiver, **not** a self-booting system recovery: EFI, partition layout, kernel/initramfs, bootloader, BIOS/UEFI and snapshot completeness must still be verified from trusted recovery media. It will refuse to send a snapshot to the source pool, touch any existing destination dataset, or run from the original active root pool. It never uses `zfs receive -F`, never changes `bootfs`, and never rolls back the current OS automatically. A fully unattended bare-metal rollback would require an independently bootable, tested A/B boot environment and hardware-specific bootloader integration that are **not** delivered here.
+
+### 2. Direct ZIM article, image, video and audio retrieval
+
+The system now has an **incremental ZIM entry reader** and SQLite FTS5 index. It reads the immutable archives without extracting the full archive onto disk, indexing text pages and metadata for image/audio/video entries. HTML image references are linked to their source article so Visual Lens and RAG can open the original Kiwix article. An optional classic 64-bit image hash allows similarity lookup even on a CPU-only machine. Text snippets and explicitly enriched media transcripts/captions can be cited in grounded AI mode.
+
+```bash
+sudo doomsday-index-zims status
+sudo doomsday-index-zims run --limit 3500
+sudo doomsday-index-zims search 'solar panel'
+sudo doomsday-index-zims media 'rocket'
+```
+
+The indexer runs at idle I/O priority with a low CPU quota every 45 minutes, only for entries named in the verified archive manifest. It resumes using a persistent entry cursor and handles the two enrolled archive pools. Install `python3-libzim` and `python3-pil` if your Ubuntu installer did not install them. Compatible older libzim versions can use `get_entry_by_id`, and recent versions support `iter_by_path`. Some malformed, excessively large, or unsupported entries are deliberately skipped; images exceeding 4 MiB are metadata-only.
+
+**Optional semantic media processing** requires your own models/tools. Images can be captioned by a locally running multimodal llama.cpp vision server; short audio/video speech segments can be transcribed with `whisper-cli`, `ffmpeg` and a user-provided GGML Whisper model:
+
+```bash
+sudo doomsday-enrich-media /srv/doomsday-zims/your-archive.zim --mode images --limit 6
+sudo doomsday-enrich-media /srv/doomsday-zims/your-archive.zim --mode speech --whisper-model /path/to/ggml-base.bin --limit 4
+```
+
+Captioning and transcription **do not run automatically**, since hundreds of gigabytes of video can require days or weeks of processing. Video speech is sampled from only the first 120 seconds per selected media resource, capped at 32 MiB input. This release does **not** claim perfect video-scene understanding, complete transcription of long videos, or model-free semantic search of every audio waveform. Full-bundle semantic enrichment remains limited by local models, resources and opt-in processing.
+
+### 3. Fully offline map tiles, local place search and OSRM navigation
+
+The browser map page now draws tiles **only from locally enrolled raster MBTiles**, with offline pan/zoom, browser GPS permission, local place-name lookup and a route overlay from a **locally running OSRM** road router. Neither map rendering nor routing makes external HTTP requests. The offline place database imports an explicit UTF-8 CSV (`name,lat,lon`) provided by the user.
+
+```bash
+sudo doomsday-maps tiles /absolute/path/to/region.mbtiles
+sudo doomsday-maps places /absolute/path/to/places.csv
+sudo doomsday-maps find Wroclaw
+sudo doomsday-maps status
+```
+
+For real offline **driving** routes, obtain a legally distributable regional OpenStreetMap PBF and prepare an OSRM routing graph separately (requires substantial temporary storage and OSRM tooling). Typical OSRM MLD workflow:
+
+```bash
+osrm-extract -p /usr/share/osrm/profiles/car.lua /path/to/region.osm.pbf
+osrm-partition /path/to/region.osrm
+osrm-customize /path/to/region.osrm
+sudo doomsday-maps router /path/to/region.osrm
+sudo systemctl enable --now doomsday-osrm.service
+```
+
+In Firefox inside Ubuntu, visit **http://127.0.0.1:8765/#map**, then enter two sets of `latitude,longitude` coordinates or choose a place from the local gazetteer. Route computation is local; OSRM does not incorporate live traffic. A user-supplied map ZIM can still be browsed through Kiwix at `http://localhost:8080`, but a map ZIM **is not itself a driving-route graph**. Raster tiles and a prepared routing graph are separate inputs. World coverage requires a world-scale raster dataset **and** world-scale regional routing data, which are not bundled and may exceed the 1 TB storage budget. Walking/cycling routes need their own appropriately prepared graphs; this release exposes driving only.
+
+### Upgrade an existing V6 installation
+
+Unzip the V6.7 release, run `sudo ./install.sh` from its extracted directory, and check:
+
+```bash
+sudo systemctl status doomsday-ai-web.service --no-pager
+sudo doomsday-index-zims status
+sudo doomsday-recovery-watch status
+sudo doomsday-maps status
+```
+
+None of these commands repartition drives or download large model weights/map datasets. Existing verified ZIM files and their read-only datasets remain in place. Index and route quality depend on input data. Existing 14-day backup policy, selected-ZIM backups and dual-drive storage are unchanged.
+
+**Verification scope:** 88 local Python tests including archive-index resume, article links, GPS coordinate handling, offline MBTiles TMS row inversion, local-only OSRM API calls, media captions as retrievable evidence and non-destructive ZFS recovery planning. Tests are mocked or use tiny synthetic assets. No claim of verified multi-terabyte indexing, physical hardware rollback, road-route accuracy, or complete media comprehension until those are tested on real hardware and archives.
