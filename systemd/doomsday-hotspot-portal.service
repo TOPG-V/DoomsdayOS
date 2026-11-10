@@ -1,0 +1,14 @@
+[Unit]
+Description=Read-only Kiwix links page on the explicitly enabled Doomsday Wi-Fi hotspot
+After=NetworkManager.service
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/hotspot_portal.py
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target
