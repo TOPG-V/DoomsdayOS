@@ -38,8 +38,12 @@ function displaySources(box,res){if(res.kiwix){const p=el('p');p.append('Offline
 $('searchForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('searchResult'),q=$('searchQ').value,mode=document.querySelector('[name=searchMode]:checked').value;box.appendChild(el('p','Searching local sources...','muted'));try{const d=await ask({action:mode==='algorithmic'?'search':'chat',mode, prompt:q,visual_rag:$('ragVisualSearch').checked});clear('searchResult');if(d.answer||d.text)box.appendChild(el('p',d.answer||d.text));if(d.engine)box.appendChild(el('p','OCR engine: '+d.engine+' · language '+d.language,'muted'));displaySources(box,d);}catch(ex){clear('searchResult');error(box,ex.message)}});
 $('chatForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('chatQ').value,mode=document.querySelector('[name=chatMode]:checked').value; if(!q.trim())return;$('chatQ').value='';const log=$('chatLog');const you=el('div',null,'message user');you.appendChild(el('small','YOU'));you.appendChild(el('p',q));log.appendChild(you);const ai=el('div',null,'message assistant');ai.appendChild(el('small','DOOMSDAY AI'));const content=el('p','Generating locally...');ai.appendChild(content);log.appendChild(ai);try{let loc=null;
   if(mode==='agent'&&$('agentUseLocation').checked){
-   if(!navigator.geolocation)throw Error('Browser geolocation unavailable; enter start coordinates instead.');
-   loc=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(p=>resolve({lat:p.coords.latitude,lon:p.coords.longitude}),e=>reject(Error('Location not available: '+e.message)),{enableHighAccuracy:false,timeout:9000}));
+   // Explicit sharing for this request only. Prefer the user's manually chosen point.
+   if(manualLocation)loc={...manualLocation};
+   else {
+    if(!navigator.geolocation)throw Error('No location saved. Open World Maps → Set my location manually.');
+    loc=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(p=>resolve({lat:p.coords.latitude,lon:p.coords.longitude}),e=>reject(Error('GPS unavailable: '+e.message+'. You can set your location manually in World Maps.')),{enableHighAccuracy:false,timeout:9000}));
+   }
   }
   const d=await ask({action:mode==='agent'?'agent_chat':mode==='research'?'research_answer':'chat',mode,prompt:q,visual_rag:$('ragVisualChat').checked,browser_location:loc});
   content.textContent=d.answer||'No generated text';displaySources(ai,d);
@@ -73,7 +77,7 @@ $('asrRecord').addEventListener('click',async()=>{try{
  }catch(err){error(clear('asrResult'),err.message)} });
 $('asrStop').addEventListener('click',()=>{if(speechRecorder?.state==='recording')speechRecorder.stop()});
 $('mapSearch').addEventListener('click',()=>{const q=$('mapQ').value.trim()||'world map';window.open('http://localhost:8080/search?pattern='+encodeURIComponent(q),'_blank','noopener,noreferrer');});
-$('locate').addEventListener('click',()=>{const out=$('positionResult');if(!navigator.geolocation){out.textContent='This browser cannot access geolocation. Enter a place manually.';return;}out.textContent='Requesting browser location permission...';navigator.geolocation.getCurrentPosition(p=>{const lat=p.coords.latitude.toFixed(5),lon=p.coords.longitude.toFixed(5);out.textContent='Local coordinates: '+lat+', '+lon+' (accuracy ~'+Math.round(p.coords.accuracy)+' m). Start point filled for offline routing.';$('mapQ').value=lat+', '+lon;$('routeStart').value=lat+', '+lon;mapState.lat=Number(lat);mapState.lon=Number(lon);mapState.z=12;if(mapState.vectorReady){mapState.vector.flyTo({center:[Number(lon),Number(lat)],zoom:12});syncVectorOverlay();}else drawMap();},e=>{out.textContent='Location unavailable or permission denied: '+e.message;},{enableHighAccuracy:false,timeout:9000,maximumAge:60000})});
+$('locate').addEventListener('click',()=>{const out=$('positionResult');if(!navigator.geolocation){out.textContent='GPS is unavailable. Set your location manually using the form below or by clicking the offline map.';return;}out.textContent='Requesting browser location permission...';navigator.geolocation.getCurrentPosition(p=>{const lat=p.coords.latitude.toFixed(5),lon=p.coords.longitude.toFixed(5);out.textContent='GPS position: '+lat+', '+lon+' (accuracy ~'+Math.round(p.coords.accuracy)+' m). Start point filled. GPS coordinates are not saved automatically.';$('mapQ').value=lat+', '+lon;$('routeStart').value=lat+', '+lon;mapState.lat=Number(lat);mapState.lon=Number(lon);mapState.z=12;if(mapState.vectorReady){mapState.vector.flyTo({center:[Number(lon),Number(lat)],zoom:12});syncVectorOverlay();}else drawMap();},e=>{out.textContent='GPS unavailable or permission denied: '+e.message+'. You can set your location manually below.';},{enableHighAccuracy:false,timeout:9000,maximumAge:60000})});
 async function hardware(){const box=clear('hardware');try{const r=await fetch('/api/status');const d=await r.json();for(const [label,v] of [['Profile',d.profile.tier],['Available RAM',d.profile.ram_free_mib+' MiB'],['Free NVIDIA VRAM',d.profile.vram_free_mib+' MiB'],['Context',d.profile.context+' tokens'],['KV cache',d.profile.kv],['Media index',d.profile.index_mode],['Model loading',d.model_residency?.policy||'unknown'],['Loaded models',(d.model_residency?.loaded||[]).join(', ')||'none'],['Active inference',(d.model_residency?.busy||[]).join(', ')||'idle']]){const card=el('div',null,'spec');card.appendChild(el('small',label));card.appendChild(el('b',v));box.appendChild(card)}$('residencyStatus').textContent='Available RAM budget: '+(d.model_residency?.usable_budget_mib??'unknown')+' MiB. Registered models: '+(d.model_residency?.registered||[]).join(', ')+'. Text + decision share memory when they fit, otherwise switch one at a time.';}catch(e){error(box,e.message)}}
 $('refreshHardware').addEventListener('click',hardware);
 
@@ -81,11 +85,43 @@ $('refreshHardware').addEventListener('click',hardware);
 const mapState={lat:0,lon:0,z:2,tilesReady:false,vectorTiles:false,routerReady:false,route:null,
   dragging:false,pointer:null,moved:false,refresh:0,vector:null,vectorReady:false,vectorData:null};
 let stopValues=[];
+// User-controlled coordinates persist in this browser only. No OS location inference.
+let manualLocation=window.DoomsdayManualLocation.load();
+function manualLocationLabel(){return manualLocation?(manualLocation.name?manualLocation.name+' · ':'')+pointValue(manualLocation.lat,manualLocation.lon):'No manual location saved.';}
+function updateManualLocationUI(){
+ $('manualLocationStatus').textContent=manualLocation?'Saved on this browser: '+manualLocationLabel()+'. You can use it for routes without GPS.':'No manual location saved. Type a place, or choose My location (manual) and click the map.';
+ $('manualLocationStart').disabled=!manualLocation;
+ $('manualLocationClear').disabled=!manualLocation;
+}
+function setManualLocation(position){
+ manualLocation=window.DoomsdayManualLocation.save(position);
+ const pair=pointValue(manualLocation.lat,manualLocation.lon);
+ $('manualLocationInput').value=manualLocation.name||pair;
+ $('routeStart').value=pair;
+ $('mapQ').value=pair;
+ mapState.lat=manualLocation.lat;mapState.lon=manualLocation.lon;mapState.z=Math.max(mapState.z,10);
+ if(mapState.vectorReady){mapState.vector.flyTo({center:[manualLocation.lon,manualLocation.lat],zoom:Math.max(mapState.vector.getZoom(),10)});syncVectorOverlay();}
+ else drawMap();
+ updateManualLocationUI();
+}
+$('manualLocationSave').addEventListener('click',async()=>{
+ const out=$('manualLocationStatus');out.textContent='Resolving your location from the offline place index…';
+ try{
+  const raw=$('manualLocationInput').value.trim();
+  if(!raw)throw Error('Enter coordinates, an indexed city, or select a point on the map.');
+  const position=await resolvePlace(raw);
+  setManualLocation({...position,name:parsePosition(raw)?'':(position.name||raw)});
+ }catch(e){out.textContent='Cannot set location: '+e.message+' Use a latitude,longitude pair or pick a point on the map.';}
+});
+$('manualLocationInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('manualLocationSave').click();}});
+$('manualLocationStart').addEventListener('click',()=>{if(manualLocation){$('routeStart').value=pointValue(manualLocation.lat,manualLocation.lon);$('manualLocationStatus').textContent='Using '+manualLocationLabel()+' as the route start.';}});
+$('manualLocationClear').addEventListener('click',()=>{manualLocation=null;window.DoomsdayManualLocation.clear();$('manualLocationInput').value='';updateManualLocationUI();});
 function mercator(lat,lon,z){const n=2**z;const y=(1-Math.asinh(Math.tan(Math.max(-85.05,Math.min(85.05,lat))*Math.PI/180))/Math.PI)/2*n;return [(lon+180)/360*n,y];}
 function fromMercator(x,y,z){const n=2**z;return [Math.atan(Math.sinh(Math.PI*(1-2*y/n)))*180/Math.PI,((x/n*360+540)%360)-180];}
 function pointValue(lat,lon){return Number(lat).toFixed(6)+','+Number(lon).toFixed(6)}
 function routePointIds(){return ['routeStart',...stopValues.map((_,i)=>'routeVia'+(i+1)),'routeEnd'];}
 function setRoutePoint(target,lat,lon){
+  if(target==='manualLocation'){setManualLocation({lat,lon,name:'Selected on offline map'});return;}
   let n=Number(String(target).replace('routeVia',''));
   if(target.startsWith('routeVia')&&Number.isInteger(n)&&n>=1&&n<=3){while(stopValues.length<n)stopValues.push('');renderStops();}
   if(!$(target))throw Error('Add that stop first');$(target).value=pointValue(lat,lon);
@@ -103,6 +139,7 @@ $('addStop').addEventListener('click',()=>{if(stopValues.length<3){stopValues.pu
 function parsePosition(value){const match=String(value).trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
   if(!match)return null;const lat=+match[1],lon=+match[2];if(!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)throw Error('Coordinates outside latitude/longitude limits');return {lat,lon};}
 async function resolvePlace(input){const raw=input.trim();if(!raw)throw Error('Enter start, each stop, and destination');
+  if(/^(current|my location|here)$/i.test(raw))throw Error('Set my location manually in World Maps or use GPS first.');
   const pair=parsePosition(raw);if(pair)return {...pair,name:raw};
   if(/^(usa|us|united states|united kingdom|uk|europe|asia)$/i.test(raw))throw Error('A country or continent is not a specific destination. Choose a city, address, or map point.');
   const response=await ask({action:'find_places',prompt:raw});const hits=response.results||[];
@@ -202,7 +239,11 @@ $('offlineCanvas').addEventListener('pointermove',e=>{if(!mapState.dragging||!ma
 $('offlineCanvas').addEventListener('wheel',e=>{e.preventDefault();mapState.z=Math.max(0,Math.min(18,mapState.z+(e.deltaY<0?1:-1)));drawMap()},{passive:false});
 $('routeGo').addEventListener('click',async()=>{const box=clear('routeResult');box.appendChild(el('p','Finding route using installed offline networks…','muted'));
  try{
- const points=[];for(const id of routePointIds())points.push(await resolvePlace($(id).value));
+ const points=[];for(const id of routePointIds()){
+  const value=$(id).value.trim();
+  if(id==='routeStart'&&manualLocation&&(!value||/^(current|my location|here)$/i.test(value))){points.push({...manualLocation});continue;}
+  points.push(await resolvePlace(value));
+ }
  const mode=$('routeMode').value;const d=await ask({action:'route_multi',points,mode});
  if(!Array.isArray(d.coordinates)||!d.coordinates.length)throw Error('Local router returned no geometry');
  mapState.route=d.coordinates;focusRoute(d.coordinates);syncVectorOverlay();clear('routeResult');
@@ -217,7 +258,11 @@ $('offlinePlaceFind').addEventListener('click',async()=>{const box=clear('offlin
  r.results.forEach(p=>{const b=el('button',p.name+' · '+p.lat.toFixed(4)+', '+p.lon.toFixed(4),'secondary');b.type='button';b.addEventListener('click',()=>{
    setRoutePoint($('mapTarget').value,p.lat,p.lon);syncVectorOverlay();});box.appendChild(b)});
  }catch(e){error(box,e.message)}});
-renderStops();mapInfo();
+renderStops();updateManualLocationUI();
+if(manualLocation){mapState.lat=manualLocation.lat;mapState.lon=manualLocation.lon;mapState.z=10;
+ $('manualLocationInput').value=manualLocation.name||pointValue(manualLocation.lat,manualLocation.lon);
+ $('routeStart').value=pointValue(manualLocation.lat,manualLocation.lon);}
+mapInfo();
 
 $('mediaSearchForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('mediaSearchResult');try{const data=await ask({action:'media_search',prompt:$('mediaSearchQ').value,kind:$('mediaKind').value});displaySources(box,data);if(!data.results.length)box.appendChild(el('p','No indexed media matched. The background ZIM index may still be incomplete.'));}catch(ex){error(box,ex.message)}});
 async function recoveryStatus(){const box=$('recoveryWatchStatus');if(!box)return;try{const r=await fetch('/api/recovery/status');const d=await r.json();box.textContent=d.recovery_plan_ready?'Recovery plan ready after '+d.incomplete_boots+' incomplete boots. Inspect: sudo doomsday-recovery-watch plan':'Recovery watcher: '+d.incomplete_boots+' previous incomplete boots. No automatic destructive rollback.';}catch(e){box.textContent='Recovery status temporarily unavailable.'}}
