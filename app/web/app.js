@@ -24,7 +24,7 @@ async function installModeUI(){
 }
 window.addEventListener('DOMContentLoaded',installModeUI);
 const $=id=>document.getElementById(id);
-const nameMap={home:'Overview',search:'Knowledge Search',chat:'Local Chat',lens:'Visual Lens',translate:'Translate',map:'World Maps',models:'AI & Hardware'};
+const nameMap={home:'Overview',search:'Knowledge Search',chat:'Local Chat',lens:'Visual Lens',translate:'Translate',map:'World Maps',maintenance:'System Health',models:'AI & Hardware',research:'Research & PDFs'};
 function go(name){document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active',el.id===name));document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===name));$('pageName').textContent=nameMap[name]||name;location.hash=name==='home'?'':name;if(name==='models')hardware();}
 document.querySelectorAll('[data-tab]').forEach(el=>el.addEventListener('click',()=>go(el.dataset.tab)));
 document.querySelectorAll('[data-goto]').forEach(el=>el.addEventListener('click',()=>go(el.dataset.goto)));
@@ -35,7 +35,7 @@ function error(target,msg){target.appendChild(el('p',msg,'error'));}
 function link(target,title,url){const a=el('a',title);a.href=url;a.target='_blank';a.rel='noopener noreferrer';target.appendChild(a);return a;}
 async function ask(payload){const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d;}
 function displaySources(box,res){if(res.kiwix){const p=el('p');p.append('Offline archive: ');link(p,'Open Kiwix search',res.kiwix);box.appendChild(p);}if(res.sources?.length||res.results?.length){const list=el('ul');(res.sources||res.results).forEach(s=>{const item=el('li');if(s.link)link(item,s.title||s.name,s.link);else item.textContent=s.title||s.name||'Result';if(s.snippet)item.appendChild(el('span',' — '+s.snippet));if(s.match_percent!=null)item.appendChild(el('span',' — '+s.match_percent+'% hash similarity'));list.appendChild(item)});box.appendChild(list);}const photos=res.images?.length?res.images:(res.mode==='classic_ahash_dhash'?res.results?.filter(s=>s.media_link).slice(0,12).map(s=>({image_url:s.media_link,article_link:s.link,title:s.name,alt:s.name})):[]);if(photos?.length){const title=el('h3',res.images?.length?'Images from the selected articles only':'Scripted similar-image matches');box.appendChild(title);const gallery=el('div',null,'article-gallery');for(const src of photos){const tile=el('div',null,'article-photo');const picture=el('img');picture.src=src.image_url;picture.alt=src.alt||src.title||'Article image';picture.loading='lazy';picture.referrerPolicy='no-referrer';tile.appendChild(picture);const caption=el('div');link(caption,src.title||'Open source article',src.article_link);tile.appendChild(caption);gallery.appendChild(tile)}box.appendChild(gallery);}if(res.visual_note)box.appendChild(el('p',res.visual_note,'muted'));if(res.note)box.appendChild(el('p',res.note,'muted'));}
-$('searchForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('searchResult'),q=$('searchQ').value,mode=document.querySelector('[name=searchMode]:checked').value;box.appendChild(el('p','Searching local sources...','muted'));try{const d=await ask({action:mode==='algorithmic'?'search':'chat',mode, prompt:q,visual_rag:$('ragVisualSearch').checked});clear('searchResult');if(d.answer)box.appendChild(el('p',d.answer));displaySources(box,d);}catch(ex){clear('searchResult');error(box,ex.message)}});
+$('searchForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('searchResult'),q=$('searchQ').value,mode=document.querySelector('[name=searchMode]:checked').value;box.appendChild(el('p','Searching local sources...','muted'));try{const d=await ask({action:mode==='algorithmic'?'search':'chat',mode, prompt:q,visual_rag:$('ragVisualSearch').checked});clear('searchResult');if(d.answer||d.text)box.appendChild(el('p',d.answer||d.text));if(d.engine)box.appendChild(el('p','OCR engine: '+d.engine+' · language '+d.language,'muted'));displaySources(box,d);}catch(ex){clear('searchResult');error(box,ex.message)}});
 $('chatForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('chatQ').value,mode=document.querySelector('[name=chatMode]:checked').value; if(!q.trim())return;$('chatQ').value='';const log=$('chatLog');const you=el('div',null,'message user');you.appendChild(el('small','YOU'));you.appendChild(el('p',q));log.appendChild(you);const ai=el('div',null,'message assistant');ai.appendChild(el('small','DOOMSDAY AI'));const content=el('p','Generating locally...');ai.appendChild(content);log.appendChild(ai);try{let loc=null;
   if(mode==='agent'&&$('agentUseLocation').checked){
    if(!navigator.geolocation)throw Error('Browser geolocation unavailable; enter start coordinates instead.');
@@ -48,7 +48,7 @@ $('chatForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('
  }catch(ex){content.textContent='Error: '+ex.message;}log.scrollTop=log.scrollHeight;});
 let currentImage='';
 $('lensImage').addEventListener('change',e=>{const file=e.target.files[0];currentImage='';$('lensPreview').hidden=true;if(!file)return;if(file.size>12*1024*1024){error(clear('lensResult'),'Image exceeds 12 MB');return}const reader=new FileReader();reader.onload=()=>{currentImage=String(reader.result);$('lensPreview').src=currentImage;$('lensPreview').hidden=false};reader.readAsDataURL(file);});
-$('lensForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('lensResult');if(!currentImage){error(box,'Choose an image first.');return}const q=$('lensQ').value;try{let mode=document.querySelector('[name=lensMode]:checked').value;if(mode==='auto'){const r=await ask({action:'route',prompt:q,image:currentImage});box.appendChild(el('p','Decision: '+r.decision.route+' ('+r.decision.method+')','muted'));mode=r.decision.route==='image_search'?'image_search':'vision';}const d=await ask({action:mode==='image_search'?'image_search':'vision',prompt:q,image:currentImage});if(d.answer)box.appendChild(el('p',d.answer));displaySources(box,d);}catch(ex){error(box,ex.message)}});
+$('lensForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('lensResult');if(!currentImage){error(box,'Choose an image first.');return}const q=$('lensQ').value;try{let mode=document.querySelector('[name=lensMode]:checked').value;if(mode==='auto'){const r=await ask({action:'route',prompt:q,image:currentImage});box.appendChild(el('p','Decision: '+r.decision.route+' ('+r.decision.method+')','muted'));mode=r.decision.route==='image_search'?'image_search':r.decision.route==='ocr'?'ocr':'vision';}const d=await ask({action:mode==='image_search'?'image_search':mode==='ocr'?'ocr_image':'vision',prompt:q,image:currentImage,ocr_language:$('ocrLanguage').value});if(d.answer)box.appendChild(el('p',d.answer));displaySources(box,d);}catch(ex){error(box,ex.message)}});
 const translatorLanguages={auto:'Automatic detection',en:'English',pl:'Polish',de:'German',fr:'French',es:'Spanish',it:'Italian',pt:'Portuguese',nl:'Dutch',sv:'Swedish',fi:'Finnish',da:'Danish',no:'Norwegian',is:'Icelandic',et:'Estonian',lv:'Latvian',lt:'Lithuanian',cs:'Czech',sk:'Slovak',sl:'Slovenian',hr:'Croatian',bg:'Bulgarian',ro:'Romanian',hu:'Hungarian',el:'Greek',mt:'Maltese',ga:'Irish',ca:'Catalan',ru:'Russian',uk:'Ukrainian',be:'Belarusian',sr:'Serbian',bs:'Bosnian',tr:'Turkish',ar:'Arabic',zh:'Chinese',ja:'Japanese'};
 for(const [code,name] of Object.entries(translatorLanguages)){
  const s=el('option',name);s.value=code;$('sourceLanguage').appendChild(s);
@@ -277,3 +277,23 @@ $('researchAskForm').addEventListener('submit',async e=>{e.preventDefault();cons
  }catch(err){clear('researchAnswer');error(out,err.message)}
 });
 refreshResearchStatus();
+
+// Read-only system maintenance. The AI never receives a command-execution API.
+$('analyzeSystem').addEventListener('click',async()=>{
+ const out=clear('maintenanceResults');out.appendChild(el('p','Checking services and ZFS health…','muted'));
+ try{
+  const d=await ask({action:'system_analyze'});out.replaceChildren();
+  out.appendChild(el('h3','System findings'));
+  for(const finding of d.findings||[]){const row=el('div',null,'research-hit');row.appendChild(el('b',finding.severity.toUpperCase()+': '+finding.issue));row.appendChild(el('p',finding.action,'muted'));out.appendChild(row);}
+  if(d.actions?.length){out.appendChild(el('h3','Reviewed repair actions — terminal confirmation required'));
+   for(const step of d.actions){const row=el('div',null,'research-hit');row.appendChild(el('b',step.description));row.appendChild(el('p',step.risk,'muted'));
+    const cmd='sudo doomsday-maintenance apply '+step.id+' --confirm APPLY-'+step.id;
+    const code=el('code',cmd);row.appendChild(code);const copy=el('button','Copy command','secondary');copy.type='button';copy.addEventListener('click',()=>navigator.clipboard?.writeText(cmd));row.appendChild(copy);out.appendChild(row);}}
+ }catch(err){out.replaceChildren();error(out,err.message)}
+});
+$('runDiagnostic').addEventListener('click',async()=>{
+ const out=clear('maintenanceResults');
+ try{const d=await ask({action:'diagnostic_script',script:$('diagnosticScript').value});
+ for(const [name,result] of Object.entries(d.results||{})){const row=el('div',null,'research-hit');row.appendChild(el('h3',name));row.appendChild(el('pre',result.text||'No output'));out.appendChild(row)}
+ }catch(err){error(out,err.message)}
+});
