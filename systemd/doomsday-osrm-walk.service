@@ -1,0 +1,17 @@
+[Unit]
+Description=DoomsdayOS offline walking OSRM router (optional local foot-profile graph)
+After=local-fs.target
+ConditionPathExists=/etc/doomsday-vault/maps.json
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/offline_maps.py serve-walker
+Restart=on-failure
+RestartSec=12s
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryMax=4G
+[Install]
+WantedBy=multi-user.target
