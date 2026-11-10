@@ -27,7 +27,18 @@ def main():
     print('\nConfigure Wi-Fi hotspot (optional):')
     wifi_manager.configure()
     print('\nZIM library selection (requires Internet only during download):')
-    interactive_wizard()
+    selection=interactive_wizard()
+    if selection:
+        # A confirmed queue should begin now, without waiting for the retry timer.
+        # The service still checks enrolled ZFS mounts and SHA-256 before publish.
+        timer=run('systemctl','enable','--now','doomsday-zim-download.timer')
+        launch=run('systemctl','start','--no-block','doomsday-zim-download.service')
+        if timer.returncode or launch.returncode:
+            print('Download queued, but automatic launch failed. Run: sudo systemctl status doomsday-zim-download.service --no-pager -l')
+        else:
+            print('Download started in the background; status: sudo doomsday-zims status')
+    else:
+        print('No new downloads queued; Kiwix stays ready for future verified ZIMs.')
     BASE.mkdir(parents=True,exist_ok=True)
     marker.parent.mkdir(parents=True,exist_ok=True)
     marker.write_text('complete\n')
