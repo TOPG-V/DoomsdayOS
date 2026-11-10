@@ -87,18 +87,22 @@ def set_ro(ds, value:bool):
 def protect():
     cfg=current_config()
     if not cfg.get('immutable_zims'): return 'Archive protection not configured (run wizard)'
+    from dual_storage import locations, archive_config
+    protected=[]
     with archive_lock():
-        _,ds=checked_archive(cfg)
-        set_ro(ds, True)
-        return 'Verified archive dataset now read-only: '+ds
+        for loc in locations(cfg):
+            _,ds=checked_archive(archive_config(cfg,loc['key']))
+            set_ro(ds,True)
+            protected.append(ds)
+    return 'Verified archive datasets now read-only: '+', '.join(protected)
 
 
-def record_manifest(filename, checksum, size, source_url):
+def record_manifest(filename, checksum, size, source_url, archive_dataset=''):
     BASE.mkdir(parents=True,exist_ok=True)
     path=BASE/'zim-manifest.json'
     try: data=json.loads(path.read_text())
     except (OSError,ValueError):data={}
-    data[filename]={'sha256':checksum,'bytes':size,'source_url':source_url,'verified_at':dt.datetime.now(dt.timezone.utc).isoformat()}
+    data[filename]={'sha256':checksum,'bytes':size,'source_url':source_url,'verified_at':dt.datetime.now(dt.timezone.utc).isoformat(), 'archive_dataset':archive_dataset or current_config().get('zim_dataset','')}
     fd,tmp=tempfile.mkstemp(dir=BASE,prefix='.zim-manifest.')
     try:
         os.fchmod(fd,0o600)
@@ -110,8 +114,8 @@ def record_manifest(filename, checksum, size, source_url):
         if os.path.exists(tmp):os.unlink(tmp)
 
 
-def publish_verified(stage_file:Path, expected_sha:str, url:str=''):
-    cfg=current_config()
+def publish_verified(stage_file:Path, expected_sha:str, url:str='', cfg_override=None):
+    cfg=cfg_override or current_config()
     dst,ds=checked_archive(cfg)
     st=stage_dir(cfg)
     stage_file=Path(stage_file)
@@ -151,7 +155,7 @@ def publish_verified(stage_file:Path, expected_sha:str, url:str=''):
             # Never leave the entire archive writable after an interrupted copy.
             set_ro(ds,True)
         if published:
-            record_manifest(final.name,expected_sha,final.stat().st_size,url)
+            record_manifest(final.name,expected_sha,final.stat().st_size,url,ds)
             # Snapshot the verified archive state (not a replacement for another drive).
             snap='zim-'+dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
             result=run('zfs','snapshot',ds+'@'+snap)
@@ -209,7 +213,13 @@ def restore_from_enrolled_backup(name, expected):
 
 def verify_archives():
     cfg=current_config()
-    dst,ds=checked_archive(cfg)
+    from dual_storage import locations, archive_config
+    contexts={}
+    for loc in locations(cfg):
+        c=archive_config(cfg,loc['key'])
+        dst,ds=checked_archive(c)
+        contexts[ds]=(dst,c)
+
     records=BASE/'zim-manifest.json'
     if not records.exists():
         print('No trusted ZIM SHA-256 manifest yet; nothing authenticated for verification')
@@ -218,11 +228,17 @@ def verify_archives():
     bad=0
     for name,entry in sorted(data.items()):
         if Path(name).name!=name or not name.endswith('.zim'):continue
+        recorded_ds=entry.get('archive_dataset') or cfg.get('zim_dataset','')
+        if recorded_ds not in contexts:
+            print('UNAVAILABLE ARCHIVE DATASET:',name, recorded_ds, file=sys.stderr)
+            bad+=1
+            continue
+        dst,location_cfg=contexts[recorded_ds]
         target=dst/name
         try: valid=target.is_file() and sha256(target)==entry['sha256']
         except OSError:valid=False
         if not valid:
-            if cfg.get('auto_restore_verified_zims',False):
+            if cfg.get('auto_restore_verified_zims',False) and recorded_ds==cfg.get('zim_dataset') and not cfg.get('zim_dir_2'):
                 try:
                     restore_from_enrolled_backup(name,entry['sha256'])
                     continue
@@ -238,12 +254,14 @@ def status():
     cfg=current_config()
     if not cfg.get('immutable_zims'):
         print('Immutable ZIM dataset: not configured');return
-    target,ds=checked_archive(cfg)
-    print('Archive dataset:',ds)
-    print('Mount:',target)
-    print('Read-only:',must('zfs','get','-H','-o','value','readonly',ds))
-    print('Copies:',must('zfs','get','-H','-o','value','copies',ds))
-    print('Staging:',stage_dir(cfg))
+    from dual_storage import locations, archive_config
+    for loc in locations(cfg):
+        c=archive_config(cfg,loc['key'])
+        target,ds=checked_archive(c)
+        print('Archive location:',loc['key'],'dataset:',ds,'mount:',target)
+        print('Read-only:',must('zfs','get','-H','-o','value','readonly',ds))
+        print('Copies:',must('zfs','get','-H','-o','value','copies',ds))
+        print('Staging:',stage_dir(c))
 
 
 def main():
