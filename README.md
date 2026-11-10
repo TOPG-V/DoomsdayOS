@@ -210,3 +210,46 @@ The planner accounts for original archive and staging space plus requested addit
 **Critical tradeoff:** A backup folder on the OS drive is not independent if the OS disk fails; snapshots and copies on the same physical disk do not prevent total disk-loss. Files in OS folders may also be included in ordinary root filesystem snapshots, increasing space requirements. For disaster recovery, retain at least one physically separate, verified copy. Selecting the OS folder disables unattended ZIM auto-repair from that folder. The software never formats a disk or deletes excluded ZIMs.
 
 Existing installed archives can be reselected for backup without downloading them again. A changed backup selection updates queued archive metadata, and selecting an already-completed archive for backup schedules it for another checksum check and copy if necessary. View status and the backup selection with `sudo doomsday-zims status`. File paths and mount identifiers are verified again before copying; an unplugged disk is never silently replaced by writing into its empty mount directory.
+
+
+## V6.5 — opt-in two-drive ZIM placement and backups after original downloads
+
+**Keeping the originals safe comes first.** A selected download package is unchanged (Full ~575.0 GB, Partial ~483.8 GB excluding only TED, Wikipedia Only ~127.4 GB). The default single-drive layout works as before. After you already queued the originals, run:
+
+```bash
+sudo doomsday-zims backups
+```
+
+This prints the numbered queued files, their status and backup selections. Type `29,34` to back up only Maps and the full English Wikipedia from the original 39-file collection; type `all`, `none`, or `exclude 13,29` as needed. Then select an OS-drive directory or a separately mounted backup directory. A full space estimate is shown; if the selected copies don't fit, it refuses to change anything. **No existing backup is deleted when a selection is excluded.** A same-disk OS backup is useful against accidental deletion but **not a physical disk failure**.
+
+The download worker now verifies and installs the original ZIM files **before** making extra selected backups. This avoids requiring the largest temporary staging file and all optional backup copies at the same time. Selected backups are verified with SHA-256 before they become final, and corrupted originals are not overwritten. If any original is still incomplete, optional backups are deferred until all originals finish, and downloaded ones remain readable.
+
+### Spread both originals and selected backups across two prepared ZFS drives
+
+**Do not use this on an important pool before you have a separate proven recovery copy.** An ordinary NTFS/exFAT disk or a second partition of the same ZFS pool is not sufficient for this feature. Connect a **second, already imported, separate ZFS pool**. Check `sudo zpool list` and `sudo zpool status -P` to confirm the pools use physically distinct devices. DoomsdayOS does not repartition or format either disk.
+
+```bash
+sudo doomsday-zims dual-setup
+sudo doomsday-zims optimize
+sudo systemctl start --no-block doomsday-zim-download.service
+```
+
+`dual-setup` asks for the *existing* second pool's name and requires the literal `ENABLE TWO DRIVES` before creating four dedicated, named child datasets (archive, staging and one backup target per pool). It never takes over unknown partitions. Secondary archive/staging and new backup datasets use ZFS `copies=1` for future writes, with read-only archive protection. The operating system/boot datasets are unchanged. The primary archive keeps its existing copies setting.
+
+`optimize` shows the projected originals, temporary staging and selected cross-pool backups on **both pools**, with a separate reserve. It requires `APPLY PLAN` before updating placements in the queue. The largest first/space-aware planner retains any existing verified archive on its pool and keeps resumable partial downloads on their original pool. It never moves live ZIMs, formats disks, or allows an unmounted secondary to silently redirect writes to the OS disk. **It can refuse a plan when total capacity or per-drive staging is insufficient; it does not promise everything will fit.** Selected backups are placed on the opposite pool, not alongside their originals. A backup copy on a distinct ZFS pool is not proof of distinct *physical* hardware unless you have checked the underlying vdevs.
+
+In dual mode, Kiwix automatically serves all available, published `.zim` files from both enrolled ZFS archives through the **same** offline address: `http://localhost:8080` inside Ubuntu. If the second pool is offline, the local Kiwix service can still serve verified files on the primary pool; new downloads assigned to the missing pool safely stop instead of writing to a fallback location.
+
+### Anti-corruption guarantees and limitations
+
+- Downloaded files reside on writable staging and are resumed using HTTP byte-range requests where available. Before publication, they must match the publisher's SHA-256 sidecar or provided manifest digest.
+- Publication rehashes the archive, atomically renames it, returns the dedicated ZFS archive dataset to `readonly=on`, saves a checksum manifest and snapshots the verified library.
+- Monthly SHA-256 checks re-read archives; ZFS checksummed blocks, scrubbing, and any actually available redundant blocks can repair some corruption. A single-copy pool detects many errors but **cannot reconstruct missing data by checksum alone**.
+- The optional ZIM backup routine verifies copies by SHA-256, never replaces an unexpected existing file, and preserves an interrupted `.copying` file for investigation.
+- Automatic restoration is still limited: existing ZIM-only auto-repair works only with its original independently enrolled single-archive configuration; dual-mode fallback does not silently overwrite a damaged original. Real two-pool restore must be validated manually. Full bare-metal recovery and long-term power-loss recovery are **not proven**.
+
+### After installing from Downloads
+
+The installed programs are in `/opt/doomsday-firstboot`, their state in `/var/lib/doomsday-vault`, and ZIMs in the configured ZFS datasets. Verify `test -f /opt/doomsday-firstboot/app/zim_manager.py && sudo doomsday-zims status` before deleting the **extracted installer directory** from Downloads. Never delete `/opt/doomsday-firstboot` or the library datasets. Keep the ZIP as an offline reinstatement option if useful.
+
+**Testing:** All local Python unit tests and shell syntax checks pass. Actual disk imports, pooled storage balancing, unplug events, large downloads, and live Kiwix servicing must still be tested on disposable disks or a VM before trusting the result for disaster recovery.
