@@ -14,6 +14,7 @@ from local_index import search as text_search, article as read_article
 from media_index import similar as image_similar
 from zim_index import search as zim_search, media_search as zim_media_search, similar_image as zim_similar_image, status as zim_index_status
 from offline_maps import status as maps_status, tile as offline_tile, route as offline_route, find_places as offline_find_places
+from recovery_watch import WATCH as RECOVERY_WATCH, PLAN as RECOVERY_PLAN, _read as read_recovery_state
 
 ROOT=Path(__file__).resolve().parent
 STATIC=ROOT/'web'
@@ -138,6 +139,11 @@ class Handler(BaseHTTPRequestHandler):
         if p.path=='/api/status':return self._json(dispatch({'action':'status'}))
         if p.path=='/api/maps/status':return self._json(maps_status())
         if p.path=='/api/zim-index/status':return self._json(zim_index_status())
+        if p.path=='/api/recovery/status':
+            watch=read_recovery_state(RECOVERY_WATCH);plan=read_recovery_state(RECOVERY_PLAN)
+            return self._json({'incomplete_boots':watch.get('consecutive_incomplete_boots',0),'pending_health':watch.get('pending',False),
+                               'recovery_plan_ready':bool(plan.get('reason')),'safe_candidate':plan.get('safe_candidate'),
+                               'note':'Automatically stages safe recovery guidance; it never rolls back a live Ubuntu root.'})
         if p.path.startswith('/api/maps/tiles/'):
             try:
                 segments=p.path[len('/api/maps/tiles/'):].split('/')
