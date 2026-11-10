@@ -1,0 +1,9 @@
+[Unit]
+Description=Incrementally index newly downloaded verified ZIM archives
+[Timer]
+OnBootSec=18min
+OnUnitInactiveSec=45min
+Persistent=true
+Unit=doomsday-zim-index.service
+[Install]
+WantedBy=timers.target
