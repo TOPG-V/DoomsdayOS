@@ -171,6 +171,29 @@ def import_pdf(data,filename='uploaded.pdf',root=None):
         if os.path.exists(tmp):os.unlink(tmp)
 
 
+def import_text(raw,filename='article.txt',root=None):
+    """Index a dropped UTF-8 article, Markdown or HTML file, without executing it."""
+    root=Path(root or ROOT)
+    if not isinstance(raw,(bytes,bytearray)) or not 1<=len(raw)<=2*1024*1024:
+        raise ValueError('Article file must be at most 2 MiB')
+    safe_title=Path(str(filename).replace('\\','/')).name
+    if len(safe_title)>160 or not re.fullmatch(r'[\w .()-]+\.(?:txt|md|html|htm)',safe_title,re.I):
+        raise ValueError('Upload a .txt, .md, .html, or .htm file with a safe filename')
+    try:text=bytes(raw).decode('utf-8','strict')
+    except UnicodeDecodeError as e:raise ValueError('Article text must be UTF-8') from e
+    if safe_title.lower().endswith(('.html','.htm')):
+        parser=_VisibleHTML();parser.feed(text);parser.close()
+        text=' '.join(parser.sections)
+    if not text.strip():raise ValueError('No readable article text')
+    digest=hashlib.sha256(raw).hexdigest();identifier='note:'+digest
+    parts=_chunks(text[:MAX_WEB_TEXT])
+    with _db(root/'research.sqlite') as db:
+        current=db.execute('SELECT id FROM sources WHERE id=?',(identifier,)).fetchone()
+        if current:return {'id':identifier,'title':safe_title,'chunks':0,'existing':True}
+        _record(db,identifier,'note',safe_title,'','',digest,len(raw),1)
+        db.executemany('INSERT INTO chunks(title,text,source_id,page) VALUES (?,?,?,?)',[(safe_title,part,identifier,1) for part in parts])
+    return {'id':identifier,'title':safe_title,'chunks':len(parts),'existing':False}
+
 class _VisibleHTML(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -282,6 +305,7 @@ def _links(row):
     if kind=='pdf':
         link='/api/research/file/'+ident[4:]+'#page='+str(pg or 1)
         ident=ident+'@'+str(pg or 1)
+    elif kind=='note':link='/api/research/source?id='+urllib.parse.quote(ident,safe='')
     else:link=url
     return {'id':ident,'kind':kind,'title':title,'link':link,'page':pg or None,'snippet':excerpt,'source':kind.upper()}
 
@@ -333,7 +357,7 @@ def read(identifier,root=None,max_chars=14000):
     scoped=re.fullmatch(r'(pdf:[a-f0-9]{64})@([1-9][0-9]{0,3})',identifier)
     page=int(scoped.group(2)) if scoped else None
     actual_id=scoped.group(1) if scoped else identifier
-    if not re.fullmatch(r'(pdf|web):[a-f0-9]{64}',actual_id):return None
+    if not re.fullmatch(r'(pdf|web|note):[a-f0-9]{64}',actual_id):return None
     if not (root/'research.sqlite').exists():return None
     with _db(root/'research.sqlite') as db:
         row=db.execute('SELECT id,kind,title,url,pages FROM sources WHERE id=?',(actual_id,)).fetchone()
