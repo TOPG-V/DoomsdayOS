@@ -18,6 +18,7 @@ from recovery_watch import WATCH as RECOVERY_WATCH, PLAN as RECOVERY_PLAN, _read
 import research_library as research
 from agent_tools import TOOL_DEFS, execute_tool, bounded_tool_output
 from speech_local import asr_status, transcribe_audio, LANGUAGES
+import native_ocr,system_maintenance
 from model_scheduler import use_model, call as manager_call, SOCKET as MODEL_SOCKET
 
 ROOT=Path(__file__).resolve().parent
@@ -77,7 +78,7 @@ def agent_chat(prompt,browser_location=None):
         from trip_planner import point
         browser_location=point(browser_location)
     messages=[{'role':'system','content':
-       'You are DoomsdayOS, an offline local assistant. Available tools are read-only. '
+       'You are DoomsdayOS, an offline local assistant. Available tools are read-only; you may analyze system health but NEVER execute repairs or shell scripts. '
        'Use tools rather than inventing distances, times, ZIM/PDF sources or coordinates. '
        'Use plan_trip for travel ETA: route duration comes from offline graphs and excludes traffic. '
        'Only use current location if the user explicitly shared browser coordinates. '
@@ -147,6 +148,12 @@ def dispatch(payload):
     q=str(payload.get('prompt',''))[:8000]
     data=payload.get('image')
     is_image=bool(data)
+    if action=='ocr_status':return {'engine':'tesseract-offline','installed_languages':native_ocr.languages(),'ai_required':False}
+    if action=='ocr_image':
+        raw=_data_image(data)
+        return native_ocr.image_text(raw,str(payload.get('ocr_language','auto'))[:15])
+    if action=='system_analyze':return system_maintenance.analyze()
+    if action=='diagnostic_script':return system_maintenance.script_report(str(payload.get('script','all')))
     if action=='translator_status':return {'ai_enabled':ai_enabled(),'asr':asr_status(),'supported_languages':LANGUAGES}
     if action=='agent_tools':return {'tools':[x['function']['name'] for x in TOOL_DEFS],'ai_enabled':ai_enabled()}
     if action=='agent_chat':return agent_chat(q,payload.get('browser_location'))
