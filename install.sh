@@ -183,11 +183,17 @@ chmod 0755 /usr/local/bin/doomsday-index-zims /usr/local/bin/doomsday-enrich-med
 if [[ $mode == ai ]]; then chmod 0755 /usr/local/bin/doomsday-ai; fi
 chmod 0755 /usr/local/bin/doomsday-recovery /usr/local/bin/doomsday-image-index /usr/local/bin/doomsday-index-text
 systemctl daemon-reload
-if [[ $mode == ai ]]; then systemctl enable --now doomsday-model-manager.service; fi
+if [[ $mode == ai ]]; then
+  systemctl enable --now doomsday-model-manager.service
+  systemctl try-restart doomsday-model-manager.service
+fi
 if command -v zfs >/dev/null && zfs list -H tank/zims >/dev/null 2>&1; then
   if systemctl list-unit-files 'zfs-scrub-monthly@.timer' --no-legend 2>/dev/null | grep -q 'zfs-scrub-monthly@.timer'; then systemctl enable --now zfs-scrub-monthly@tank.timer || true; fi
 fi
 systemctl enable --now doomsday-backup.timer doomsday-zim-download.timer doomsday-hardware-recheck.timer doomsday-zim-verify.timer doomsday-stream-replica.timer doomsday-zim-protect.service doomsday-kiwix.service doomsday-ai-web.service doomsday-image-index.timer doomsday-zim-index.timer doomsday-recovery-watch-start.timer doomsday-recovery-watch-healthy.timer
+# An upgrade must reload the new web server code; enabling an already active
+# service by itself would continue running the old Python process.
+systemctl try-restart doomsday-ai-web.service
 systemctl disable doomsday-bootstrap.service 2>/dev/null || true
 touch /var/lib/doomsday-vault/bootstrap-complete
 printf '\nDoomsday first-boot services installed. No disk formatting performed.\n'
