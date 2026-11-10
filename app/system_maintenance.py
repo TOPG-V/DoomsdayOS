@@ -35,13 +35,16 @@ def _readonly_report():
         cfg=archive_guard.current_config()
         if not cfg.get('immutable_zims'):return {'code':0,'text':'Immutable ZIM protection not configured'}
         lines=[]
-        for key in ('zim_dir','zim_dir_2'):
-            path=cfg.get(key)
-            if not path:continue
+        # Examine every enrolled ZFS archive, including optional fleet pools.
+        from dual_storage import locations
+        for loc in locations(cfg):
+            key=loc['key'];path=loc['archive']
             dataset=archive_guard.exact_dataset(Path(path))
-            if not dataset:lines.append('UNMOUNTED: '+key);continue
+            if not dataset or dataset!=loc['archive_ds']:
+                lines.append('UNMOUNTED: '+key);continue
             prop=_run(['zfs','get','-H','-o','value','readonly',dataset])
-            lines.append(key+' dataset '+dataset+' readonly='+prop['text'].splitlines()[0][:25])
+            value=prop['text'].splitlines()[0][:25] if prop['text'] else 'unknown'
+            lines.append(key+' dataset '+dataset+' readonly='+value)
         return {'code':0,'text':'\n'.join(lines) or 'No enrolled ZIM datasets'}
     except (OSError,ValueError,RuntimeError) as exc:return {'code':1,'text':str(exc)[:250]}
 
@@ -84,6 +87,16 @@ def analyze():
         actions.append({'id':'protect-zims','description':'Reassert ZFS readonly=on on exact enrolled archive datasets','risk':'May pause a ZIM publication; only run after transfers stop.'})
     if data['dpkg']['text'].strip():
         findings.append({'severity':'warning','issue':'dpkg reports incomplete package configuration','action':'Review dpkg --audit before running apt or dpkg modifications.'})
+    # Read-only fleet safety: flag critically low archive pools, not just /.
+    try:
+        import storage_fleet
+        import zim_manager
+        drives=storage_fleet.drive_info(zim_manager.config())
+        for drive in drives:
+            if drive['free']<3*1024**3:
+                findings.append({'severity':'critical','issue':'ZIM pool '+drive['pool']+' has less than 3 GiB free',
+                                 'action':'Pause new transfers; review fleet capacity and backup plans before any disk changes.'})
+    except (RuntimeError,OSError,ValueError):pass
     if data['failed']['code']==0:
         for service in SERVICES:
             if service in data['failed']['text']:
