@@ -1,0 +1,18 @@
+[Unit]
+Description=DoomsdayOS adaptive local llama.cpp model memory manager
+After=local-fs.target
+ConditionPathExists=/etc/doomsday-vault/ai-models.json
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/model_scheduler.py serve
+Restart=on-failure
+RestartSec=10
+RuntimeDirectory=doomsday-vault
+RuntimeDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+[Install]
+WantedBy=multi-user.target
