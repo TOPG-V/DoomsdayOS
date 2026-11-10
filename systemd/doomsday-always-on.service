@@ -1,0 +1,14 @@
+[Unit]
+Description=Opt-in AC-only sleep inhibitor for offline DoomsdayOS services
+After=multi-user.target
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/always_on.py run
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/doomsday-vault
+[Install]
+WantedBy=multi-user.target
