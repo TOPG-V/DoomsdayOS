@@ -16,7 +16,7 @@ import system_maintenance
 TOOL_DEFS = [
  {'type':'function','function':{'name':'current_time','description':'Current date, time and UTC offset of the local DoomsdayOS machine. Not the time at a remote destination.','parameters':{'type':'object','properties':{}}}},
  {'type':'function','function':{'name':'find_places','description':'Search enrolled offline gazetteer by exact or partial town/place name. Do not guess coordinates.','parameters':{'type':'object','properties':{'query':{'type':'string'}},'required':['query']}}},
- {'type':'function','function':{'name':'plan_trip','description':'Calculate an actual offline car/walking/off-road route with optional stops (maximum three). start can be "current" only if the browser explicitly provided a GPS location; otherwise supply coordinates lat/lon or an unambiguous offline place name. Routing requires enrolled road/trail data. No live traffic.','parameters':{'type':'object','properties':{'start':{'type':'string','description':'current, city name or lat,lon'},'destination':{'type':'string'},'stops':{'type':'array','items':{'type':'string'},'maxItems':3},'mode':{'type':'string','enum':['car','walk','offroad']}},'required':['start','destination','mode']}}},
+ {'type':'function','function':{'name':'plan_trip','description':'Calculate an actual offline car/walking/off-road route with optional stops (maximum three). start can be "current" only when the user explicitly shares saved manual coordinates or browser GPS with this request; otherwise supply coordinates lat/lon or an unambiguous offline place name. Routing requires enrolled road/trail data. No live traffic.','parameters':{'type':'object','properties':{'start':{'type':'string','description':'current, city name or lat,lon'},'destination':{'type':'string'},'stops':{'type':'array','items':{'type':'string'},'maxItems':3},'mode':{'type':'string','enum':['car','walk','offroad']}},'required':['start','destination','mode']}}},
  {'type':'function','function':{'name':'map_coverage','description':'Inspect installed offline tile/road/walking graph availability without making a route.','parameters':{'type':'object','properties':{}}}},
  {'type':'function','function':{'name':'find_articles','description':'Search indexed ZIM article titles (not general internet search). Returns article links and excerpts.','parameters':{'type':'object','properties':{'query':{'type':'string'}},'required':['query']}}},
  {'type':'function','function':{'name':'find_documents','description':'Search previously indexed local PDFs, imported websites, and ZIM articles.','parameters':{'type':'object','properties':{'query':{'type':'string'}},'required':['query']}}},
@@ -41,7 +41,7 @@ def resolve_place(text, location=None):
     name=_small_text(text,160)
     if name.lower() in ('current','my location','here'):
         if location is None:
-            raise ValueError('Current location unavailable. Grant browser location permission or enter a start location.')
+            raise ValueError('Current location unavailable. Set a manual location in World Maps and share it for the request, or enter start coordinates.')
         return verify_point(location)
     coords=_coords(name)
     if coords:return coords
