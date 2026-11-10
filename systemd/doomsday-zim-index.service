@@ -1,0 +1,16 @@
+[Unit]
+Description=DoomsdayOS low-priority incremental search index of verified ZIMs
+After=local-fs.target doomsday-zim-protect.service
+ConditionPathExists=/var/lib/doomsday-vault/zim-manifest.json
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/zim_index.py run --limit 3500
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=20%
+MemoryMax=768M
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/doomsday-vault
+PrivateTmp=true
+TimeoutStartSec=45min
