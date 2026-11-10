@@ -107,3 +107,27 @@ If `tank` is absent, the system should retain its local protection but cannot re
 ```
 
 The ISO must be separately supplied and the resulting boot image tested in an isolated VirtualBox VM using disposable virtual disks. The build script is *not* proof of a working unattended installer. The Wi-Fi hotspot requires a compatible Wi-Fi adapter and is never forced on an active network connection.
+
+**While originals are downloading:** `sudo doomsday-zims backups` can change backup choices without interrupting the download. To change two-drive placement, stop the service first (`sudo systemctl stop doomsday-zim-download.service`), run `dual-setup` / `optimize`, and restart; resumable partials remain pinned to the drive where they started.
+
+## 6 — V6.6 browser UI and local AI (optional)
+
+After updating to V6.6 and restarting the installer once, open **http://127.0.0.1:8765** in Ubuntu Firefox. Kiwix ZIM reading is still **http://127.0.0.1:8080**. The AI UI requires separately installed llama.cpp models to generate text; otherwise, algorithmic search and rule-based routing still work.
+
+```bash
+sudo doomsday-ai recommend
+sudo doomsday-ai register text /path/to/chat.gguf
+sudo systemctl start doomsday-llama-text.service
+```
+
+Optional lightweight decision embedding server uses role `decision`, optional vision GGUF/MM projector uses `vision`. See README for supported capabilities and limitations. **No AI weights are bundled**, and full ZIM image/video/audio indexing is not complete.
+
+```bash
+sudo doomsday-zims import-torrent --torrent-file /path/to/archive.torrent --sha256 YOUR_64_CHARACTER_SHA256
+sudo doomsday-recovery report
+sudo doomsday-recovery hardware
+sudo doomsday-image-index enroll /path/to/photos
+sudo doomsday-index-text add /path/to/notes
+```
+
+Image indexing requires `python3-pil` installed. The last-known-good recovery advisor never automatically rewrites the running OS. Importing a torrent is a deliberate foreground operation for one SHA-verified ZIM, not a background torrent client.
