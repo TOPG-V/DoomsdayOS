@@ -519,9 +519,9 @@ def _queue_original(item, cfg):
     from dual_storage import locations, archive_config
     locs=locations(cfg)
     key=item.get('storage', 'primary')
-    if len(locs)==2 and key not in ('primary','secondary'):
+    if len(locs)>1 and key not in {x['key'] for x in locs}:
         raise RuntimeError('Run sudo doomsday-zims optimize to assign this ZIM to a drive')
-    if key=='secondary' and len(locs)!=2:
+    if key!='primary' and key not in {x['key'] for x in locs}:
         raise RuntimeError('The enrolled secondary ZFS pool is unavailable; no fallback to OS drive')
     c=archive_config(cfg,key)
     dst,ds=checked_archive(c)
@@ -551,6 +551,20 @@ def _queue_original(item, cfg):
 def _backup_destination_for_item(item,cfg):
     """Choose an enrolled opposite-pool backup for dual mode, otherwise user folder."""
     if not item.get('backup'):return None,None
+    from dual_storage import locations as enrolled_locations, pool_name
+    locs=enrolled_locations(cfg)
+    if len(locs)>2:
+        current=item.get('storage','primary')
+        target=item.get('backup_storage')
+        choices={x['key']:x for x in locs}
+        if target not in choices or current not in choices or target==current:
+            raise ValueError('Fleet backup must have a verified different ZFS pool')
+        src=choices[current];dst=choices[target]
+        if pool_name(src['archive_ds'])==pool_name(dst['archive_ds']):
+            raise ValueError('Backup on same ZFS pool is not independent')
+        if not dst.get('backup_ds'):
+            raise ValueError('Use a configured and verified dedicated fleet backup dataset')
+        return str(dst['backup']),dst['backup_ds']
     if cfg.get('zim_dir_2'):
         from dual_storage import locations, pool_name
         current=item.get('storage','primary')
@@ -620,7 +634,7 @@ def run_queue():
                 atomic_json(queue_path(),q)
                 item=dict(current)
             try:
-                if cfg.get('zim_dir_2') and item.get('storage') not in ('primary','secondary'):
+                if len(verify_locations(cfg))>1 and item.get('storage') not in {x['key'] for x in verify_locations(cfg)}:
                     raise ValueError('Two-drive mode requires sudo doomsday-zims optimize before downloading')
                 _,new=_queue_original(item,cfg)
                 _queue_update(url,status='downloaded',sha256=item['sha256'],error='')
@@ -645,18 +659,42 @@ def run_queue():
             if item is None or item.get('status')!='downloaded':continue
             try:
                 if item.get('backup'):
-                    bd,ds=_backup_destination_for_item(item,cfg)
-                    if not bd:
-                        raise ValueError('No backup destination; select one with sudo doomsday-zims backups')
+                    # Detect missing destinations before touching/rehashing originals.
+                    if not item.get('backup_storages'):
+                        candidate_dir,_candidate_ds=_backup_destination_for_item(item,cfg)
+                        if not candidate_dir:
+                            raise ValueError('No backup destination; select one with sudo doomsday-zims backups')
                     c=archive_config(cfg,item.get('storage','primary'))
                     archive=Path(c['zim_dir'])/Path(urllib.parse.urlsplit(url).path).name
                     if not archive.is_file() or sha256(archive)!=item.get('sha256'):
                         raise ValueError('Original failed checksum verification before backing up')
                     from archive_guard import exact_dataset
-                    if cfg.get('zim_dir_2') and exact_dataset(Path(bd))!=ds:
-                        raise ValueError('Opposite-pool backup dataset unmounted; not copying to wrong disk')
-                    bcfg={**cfg,'backup_dir':str(bd),'backup_dataset':ds}
-                    outcome=backup_zim(archive,bd,bcfg)
+                    from dual_storage import locations,pool_name
+                    locs={x['key']:x for x in locations(cfg)}
+                    targets=item.get('backup_storages')
+                    if targets is None:targets=[item.get('backup_storage')] if item.get('backup_storage') else []
+                    if targets:
+                        if len(targets)>2 or len(targets)!=len(set(targets)):
+                            raise ValueError('Invalid independent backup destinations')
+                        outcomes=[]
+                        for target in targets:
+                            source_key=item.get('storage','primary')
+                            if target not in locs or source_key not in locs or source_key==target:
+                                raise ValueError('Unenrolled backup storage')
+                            dest=locs[target]
+                            if pool_name(locs[source_key]['archive_ds'])==pool_name(dest['archive_ds']):
+                                raise ValueError('Backup must use a different ZFS pool')
+                            directory=dest.get('backup');ds=dest.get('backup_ds')
+                            if not directory or not ds or exact_dataset(Path(directory))!=ds:
+                                raise ValueError('Backup dataset not mounted; refusing wrong disk')
+                            outcomes.append(str(backup_zim(archive,directory,{**cfg,'backup_dir':str(directory),'backup_dataset':ds})))
+                        outcome='; '.join(outcomes)
+                    else:
+                        bd,ds=_backup_destination_for_item(item,cfg)
+                        if not bd:raise ValueError('No backup destination; select one with sudo doomsday-zims backups')
+                        if len(verify_locations(cfg))>1 and exact_dataset(Path(bd))!=ds:
+                            raise ValueError('Opposite-pool backup dataset unmounted; not copying to wrong disk')
+                        outcome=backup_zim(archive,bd,{**cfg,'backup_dir':str(bd),'backup_dataset':ds})
                 else:outcome='excluded-by-user'
                 _queue_update(url,status='done',backup_result=outcome,error='')
             except Exception as e:
