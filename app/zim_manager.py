@@ -623,7 +623,7 @@ def run_queue():
         if not cfg.get('immutable_zims'):
             raise RuntimeError('Immutable archive not configured; run sudo ./scripts/prepare-zims.sh')
         verify_locations(cfg)
-        urls=[x['url'] for x in read_queue()]
+        # Smallest first for queued work. Stable tie-break preserves entry order.\n        # Existing verified or partially downloaded archives are never moved/deleted.\n        queued=read_queue()\n        urls=[x['url'] for x in sorted(queued,key=lambda x: (\n            x.get('status') in ('done','downloaded'),\n            max(0,int(x.get('size') or 0)) if int(x.get('size') or 0)>0 else float('inf')))]
         for url in urls:
             with locked_queue():
                 q=read_queue()
