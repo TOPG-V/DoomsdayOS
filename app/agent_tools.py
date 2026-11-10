@@ -21,7 +21,13 @@ TOOL_DEFS = [
  {'type':'function','function':{'name':'find_articles','description':'Search indexed ZIM article titles (not general internet search). Returns article links and excerpts.','parameters':{'type':'object','properties':{'query':{'type':'string'}},'required':['query']}}},
  {'type':'function','function':{'name':'find_documents','description':'Search previously indexed local PDFs, imported websites, and ZIM articles.','parameters':{'type':'object','properties':{'query':{'type':'string'}},'required':['query']}}},
  {'type':'function','function':{'name':'system_diagnostics','description':'Read-only health analysis of local OS, ZFS, package state and failed services. Suggest safe next steps, never execute terminal commands or repairs.','parameters':{'type':'object','properties':{}}}},
- {'type':'function','function':{'name':'read_document','description':'Read an existing indexed local document excerpt by its source_id returned by find_documents. Not arbitrary files or URLs.','parameters':{'type':'object','properties':{'source_id':{'type':'string'}},'required':['source_id']}}}
+ {'type':'function','function':{'name':'read_document','description':'Read an existing indexed local document excerpt by its source_id returned by find_documents. Not arbitrary files or URLs.','parameters':{'type':'object','properties':{'source_id':{'type':'string'}},'required':['source_id']}}},
+ {'type':'function','function':{'name':'semantic_find_articles','description':'Use the optional EmbeddingGemma 2 index for semantic lookup of indexed ZIM articles. Falls back to title matching if model/index unavailable.','parameters':{'type':'object','properties':{'query':{'type':'string'}},'required':['query']}}},
+ {'type':'function','function':{'name':'article_images','description':'Find images ONLY in indexed ZIM articles matching the given title query, with links to those specific articles.','parameters':{'type':'object','properties':{'title_query':{'type':'string'}},'required':['title_query']}}},
+ {'type':'function','function':{'name':'zim_download_status','description':'Read-only status and counts of queued ZIMs, completed downloads and retry errors. No mutations.','parameters':{'type':'object','properties':{}}}},
+ {'type':'function','function':{'name':'storage_fleet_status','description':'Read-only ZFS fleet capacity report; does not format, move or modify any disk.','parameters':{'type':'object','properties':{}}}},
+ {'type':'function','function':{'name':'recovery_status','description':'Read safe boot-failure watcher state and whether a recovery plan exists; never restore automatically.','parameters':{'type':'object','properties':{}}}}
+
 ]
 NAMES = {x['function']['name'] for x in TOOL_DEFS}
 
@@ -83,6 +89,24 @@ def execute_tool(name,args,location=None):
         return result
     if name=='find_articles':
         return {'results':article_title_search(_small_text(args.get('query'),240),limit=8),'source':'indexed ZIM titles only'}
+    if name=='semantic_find_articles':
+        import semantic_rag
+        return semantic_rag.search(_small_text(args.get('query'),240),limit=8)
+    if name=='article_images':
+        from zim_index import article_images
+        articles=article_title_search(_small_text(args.get('title_query'),240),limit=6)
+        return {'articles':articles,'images':article_images(articles,limit=10)}
+    if name=='zim_download_status':
+        from zim_manager import read_queue
+        from collections import Counter
+        queue=read_queue();return {'total':len(queue),'statuses':dict(Counter(x.get('status','unknown') for x in queue)),
+                                   'retry_examples':[{'title':x.get('title'),'error':x.get('error','')[:150]} for x in queue if x.get('status')=='retry'][:4]}
+    if name=='storage_fleet_status':
+        import storage_fleet, zim_manager
+        return {'drives':storage_fleet.drive_info(zim_manager.config()),'note':'No disk changes; preview capacities only.'}
+    if name=='recovery_status':
+        from recovery_watch import WATCH,PLAN,_read
+        return {'watch':_read(WATCH),'plan_ready':bool(_read(PLAN).get('reason')),'note':'Unattended OS rollback is intentionally not enabled'}
     if name=='find_documents':
         results=research_library.search(_small_text(args.get('query'),240),limit=8)
         return {'results':results,'source':'locally indexed documents only'}
