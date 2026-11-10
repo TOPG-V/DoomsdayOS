@@ -540,3 +540,13 @@ The **World Maps** browser page now supports start + three optional intermediate
 The vector-map frontend uses MapLibre GL JS **only from local installed assets** and serves PBF OpenMapTiles-schema MBTiles from loopback. Self-contained **StreetZim** ZIM maps open in Kiwix and retain their own bundled MapLibre and offline routing/terrain viewer; they aren't automatically converted to a DoomsdayOS routing graph. Optional local Mapbox Terrain-RGB PNG MBTiles enable 3D terrain in the workspace. Raster map support remains as a fallback. No network map APIs, tiles or models are used while routing.
 
 **First:** after installing, see [full instructions](docs/ROUTE_PLANNER_V70.md) for the optional MapLibre-assets installer, regional routing graph preparation/enrolment, strict trail inputs, and place-name gazetteer. Car/pedestrian/offroad routing require their appropriate local graph; simply having a map ZIM does **not** imply global routing. The strict off-road filter only excludes intersections with **mapped** roads in the supplied regional file; unmapped roads or legal access are not guaranteed. This is prototype software; test routes against verified maps before relying on them.
+
+## v7.1 — source-grounded Research & PDFs workspace
+
+New **Research & PDFs** browser tab on `http://127.0.0.1:8765`. Search indexed ZIM article **titles** and retrieve cited article passages, open original Kiwix URLs, upload and index local PDFs with **page-specific** clickable citations, import an individual explicitly authorized public HTTPS article/PDF link, and ask your local llama.cpp model for a source-bounded answer. No cloud model is required; the search, source preview, and import steps work without AI.
+
+After installing, `sudo doomsday-research status`, `sudo doomsday-research add-pdf /path/to/file.pdf`, `sudo doomsday-research search "topic"`, or `sudo doomsday-research add-url https://example.org/article --online`. Imported files are placed under `/var/lib/doomsday-vault/research/`; the existing read-only ZIM pools are not changed. The web interface remains loopback-only.
+
+External retrieval is **disabled by default** and limited to a single explicitly approved public HTTPS link: no redirects, non-public addresses or unrestricted crawls. PDFs are text-extracted, *not* automatically OCRed or visually parsed. A PDF can have at most 40 MiB, and indexing is capped at 200 pages. LLM answers are potentially inaccurate; source citations should be inspected directly. The research tab is not yet a full general Internet search engine.
+
+Detailed usage and limitations: [`docs/RESEARCH_V71.md`](docs/RESEARCH_V71.md). The research feature is additive to the existing Kiwix, maps, backups, torrent, checksum and recovery components.
