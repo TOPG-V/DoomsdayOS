@@ -457,3 +457,9 @@ sudo doomsday-index-zims add /path/to/verified/archive.zim --rebuild --limit 100
 ```
 
 Re-run `sudo doomsday-index-zims add /path/to/verified/archive.zim --limit 1000` (or let the scheduled index timer resume) until the archive shows `complete`. Do not use `--rebuild` on every invocation: it intentionally restarts the index cursor. The indexer still requires compatible `python3-libzim` and the optional traditional matcher requires Pillow (`python3-pil`). All features work offline after the original ZIMs and packages are installed. This update does not rewrite, move or re-download ZIM files.
+
+### Optional visual inspection inside article-grounded RAG
+
+In the local Knowledge Search or Chat pages, select **Inspect selected article images** only when needed. This opt-in will load at most **two** bounded images, exclusively from the selected articles in the trusted verified ZIM manifest, resize them on the same machine, and send them to the **local llama.cpp vision server on 127.0.0.1:8083**. These model observations are treated as fallible supporting evidence, never as additional article sources; original article citations and links remain attached. The existing text model on port 8081 still answers from the title-selected excerpts. No images go to an external service. If python3-libzim, Pillow, the verified ZIM, or the local vision model is unavailable, it falls back to indexed text and author captions.
+
+Visual Lens **Find similar** continues to use traditional scripted aHash/dHash matching only; it does not invoke the vision or embedding model.
