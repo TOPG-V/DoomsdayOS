@@ -34,6 +34,32 @@ sudo doomsday-zims status
 
 A partial download is staged and should resume if the upstream server supports HTTP range requests. The verified final SHA-256 is required before publication.
 
+## 2a — Change backups after queueing, or use two ZFS drives
+
+After queueing, select just specific backups (e.g., ZIM **29 = Maps**, **34 = Wikipedia**) with:
+
+```bash
+sudo doomsday-zims backups
+```
+
+When a second, already imported **separate ZFS pool** is connected (not NTFS, not just a second partition on the same pool), configure optional two-drive splitting with:
+
+```bash
+sudo doomsday-zims dual-setup
+sudo doomsday-zims optimize
+```
+
+The optimization shows a per-pool fit calculation and asks `APPLY PLAN`; it does not format drives or move installed archives. New downloads are assigned to the appropriate pool, and selected backups go on the *other* pool. All originals complete first, then selected backups are made to avoid overlapping backup and temporary staging peaks.
+
+Start immediately and check status:
+
+```bash
+sudo systemctl start --no-block doomsday-zim-download.service
+sudo doomsday-zims status
+```
+
+For the offline library in Ubuntu Firefox, open `http://localhost:8080`; the same Kiwix server serves completed verified ZIMs across both available drives. Start/fix it with `sudo systemctl restart doomsday-kiwix.service`. ZIM archives on a disconnected secondary drive won't be shown until the drive returns. The extracted installer directory in Downloads can be deleted after confirming installed files at `/opt/doomsday-firstboot`, but not the installed app or data folders.
+
 ## 3 — Enroll backup storage and inspect 14-day jobs
 
 ![Backup screen](screens/backups.svg)
