@@ -10,10 +10,10 @@ async function installModeUI(){
     for(const name of ['chat','translate','models']){
       document.querySelectorAll('[data-tab="'+name+'"],[data-goto="'+name+'"]').forEach(node=>node.hidden=true);
     }
-    document.querySelectorAll('input[name="searchMode"][value="rag"],#ragVisualSearch,input[name="lensMode"][value="vision"],input[name="lensMode"][value="auto"]').forEach(node=>{
+    document.querySelectorAll('input[name="searchMode"][value="rag"],#ragVisualSearch,input[name="lensMode"][value="vision"]').forEach(node=>{
       const label=node.closest('label');if(label)label.hidden=true;
     });
-    const classic=document.querySelector('input[name="lensMode"][value="image_search"]');if(classic)classic.checked=true;
+    const depth=document.querySelector('#lensDepth');if(depth){depth.value='quick';depth.querySelector('[value=thinking]').disabled=true;}
     const lede=document.querySelector('#home .lede');if(lede)lede.textContent='Browse offline ZIM archives, PDFs, maps, and indexed images without AI or model downloads.';
     const engine=document.querySelector('#home .info-strip b');if(engine)engine.textContent='Offline indexes + scripted image matching';
     const research=document.querySelector('#research .lede');if(research)research.textContent='Find indexed ZIM articles by name, import and search PDFs, and open cited source excerpts. No AI model required.';
@@ -34,7 +34,7 @@ function clear(id){const box=$(id);box.replaceChildren();return box;}
 function error(target,msg){target.appendChild(el('p',msg,'error'));}
 function link(target,title,url){const a=el('a',title);a.href=url;a.target='_blank';a.rel='noopener noreferrer';target.appendChild(a);return a;}
 async function ask(payload){const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d;}
-function displaySources(box,res){if(res.kiwix){const p=el('p');p.append('Offline archive: ');link(p,'Open Kiwix search',res.kiwix);box.appendChild(p);}if(res.sources?.length||res.results?.length){const list=el('ul');(res.sources||res.results).forEach(s=>{const item=el('li');if(s.link)link(item,s.title||s.name,s.link);else item.textContent=s.title||s.name||'Result';if(s.snippet)item.appendChild(el('span',' — '+s.snippet));if(s.match_percent!=null)item.appendChild(el('span',' — '+s.match_percent+'% hash similarity'));list.appendChild(item)});box.appendChild(list);}const photos=res.images?.length?res.images:(res.mode==='classic_ahash_dhash'?res.results?.filter(s=>s.media_link).slice(0,12).map(s=>({image_url:s.media_link,article_link:s.link,title:s.name,alt:s.name})):[]);if(photos?.length){const title=el('h3',res.images?.length?'Images from the selected articles only':'Scripted similar-image matches');box.appendChild(title);const gallery=el('div',null,'article-gallery');for(const src of photos){const tile=el('div',null,'article-photo');const picture=el('img');picture.src=src.image_url;picture.alt=src.alt||src.title||'Article image';picture.loading='lazy';picture.referrerPolicy='no-referrer';tile.appendChild(picture);const caption=el('div');link(caption,src.title||'Open source article',src.article_link);tile.appendChild(caption);gallery.appendChild(tile)}box.appendChild(gallery);}if(res.visual_note)box.appendChild(el('p',res.visual_note,'muted'));if(res.note)box.appendChild(el('p',res.note,'muted'));}
+function displaySources(box,res){if(res.kiwix){const p=el('p');p.append('Offline archive: ');link(p,'Open Kiwix search',res.kiwix);box.appendChild(p);}if(res.sources?.length||res.results?.length){const list=el('ul');(res.sources||res.results).forEach(s=>{const item=el('li');if(s.link)link(item,s.title||s.name,s.link);else item.textContent=s.title||s.name||'Result';if(s.snippet)item.appendChild(el('span',' — '+s.snippet));if(s.match_percent!=null)item.appendChild(el('span',' — '+s.match_percent+'% hash similarity'));list.appendChild(item)});box.appendChild(list);}const photos=res.images?.length?res.images:((res.mode==='classic_ahash_dhash'||res.mode==='quick-scripted')?res.results?.filter(s=>s.media_link).slice(0,12).map(s=>({image_url:s.media_link,article_link:s.link,title:s.name,alt:s.name})):[]);if(photos?.length){const title=el('h3',res.images?.length?'Images from the selected articles only':'Scripted similar-image matches');box.appendChild(title);const gallery=el('div',null,'article-gallery');for(const src of photos){const tile=el('div',null,'article-photo');const picture=el('img');picture.src=src.image_url;picture.alt=src.alt||src.title||'Article image';picture.loading='lazy';picture.referrerPolicy='no-referrer';tile.appendChild(picture);const caption=el('div');link(caption,src.title||'Open source article',src.article_link);tile.appendChild(caption);gallery.appendChild(tile)}box.appendChild(gallery);}if(res.visual_note)box.appendChild(el('p',res.visual_note,'muted'));if(res.note)box.appendChild(el('p',res.note,'muted'));}
 $('searchForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('searchResult'),q=$('searchQ').value,mode=document.querySelector('[name=searchMode]:checked').value;box.appendChild(el('p','Searching local sources...','muted'));try{const d=await ask({action:mode==='algorithmic'?'search':'chat',mode, prompt:q,visual_rag:$('ragVisualSearch').checked});clear('searchResult');if(d.answer||d.text)box.appendChild(el('p',d.answer||d.text));if(d.engine)box.appendChild(el('p','OCR engine: '+d.engine+' · language '+d.language,'muted'));displaySources(box,d);}catch(ex){clear('searchResult');error(box,ex.message)}});
 $('chatForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('chatQ').value,mode=document.querySelector('[name=chatMode]:checked').value; if(!q.trim())return;$('chatQ').value='';const log=$('chatLog');const you=el('div',null,'message user');you.appendChild(el('small','YOU'));you.appendChild(el('p',q));log.appendChild(you);const ai=el('div',null,'message assistant');ai.appendChild(el('small','DOOMSDAY AI'));const content=el('p','Generating locally...');ai.appendChild(content);log.appendChild(ai);try{let loc=null;
   if(mode==='agent'&&$('agentUseLocation').checked){
@@ -51,8 +51,47 @@ $('chatForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('
   if(d.route?.coordinates?.length){const b=el('button','View route in World Maps','secondary');b.type='button';b.addEventListener('click',()=>{mapState.route=d.route.coordinates;go('map');syncVectorOverlay();drawMap();focusRoute(d.route.coordinates);$('routeResult').textContent='AI calculated offline route: '+Math.round(d.route.distance_m/1000*10)/10+' km, '+Math.round(d.route.duration_s/60)+' minutes (no traffic)';});ai.appendChild(b)}
  }catch(ex){content.textContent='Error: '+ex.message;}log.scrollTop=log.scrollHeight;});
 let currentImage='';
-$('lensImage').addEventListener('change',e=>{const file=e.target.files[0];currentImage='';$('lensPreview').hidden=true;if(!file)return;if(file.size>12*1024*1024){error(clear('lensResult'),'Image exceeds 12 MB');return}const reader=new FileReader();reader.onload=()=>{currentImage=String(reader.result);$('lensPreview').src=currentImage;$('lensPreview').hidden=false};reader.readAsDataURL(file);});
-$('lensForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('lensResult');if(!currentImage){error(box,'Choose an image first.');return}const q=$('lensQ').value;try{let mode=document.querySelector('[name=lensMode]:checked').value;if(mode==='auto'){const r=await ask({action:'route',prompt:q,image:currentImage});box.appendChild(el('p','Decision: '+r.decision.route+' ('+r.decision.method+')','muted'));mode=r.decision.route==='image_search'?'image_search':r.decision.route==='ocr'?'ocr':'vision';}const d=await ask({action:mode==='image_search'?'image_search':mode==='ocr'?'ocr_image':'vision',prompt:q,image:currentImage,ocr_language:$('ocrLanguage').value});if(d.answer)box.appendChild(el('p',d.answer));displaySources(box,d);}catch(ex){error(box,ex.message)}});
+let lensPending=null;
+async function lensProcessDropped(file){
+ const box=clear('lensResult');if(!file)return;
+ const name=String(file.name||'upload').toLowerCase();
+ if(file.type.startsWith('image/')||/\.(png|jpeg|jpg|webp)$/.test(name)){
+  if(file.size>12*1024*1024||file.size<10)throw Error('Image must be 10 bytes to 12 MiB');
+  const image=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(Error('Cannot read image'));reader.onload=()=>resolve(String(reader.result));reader.readAsDataURL(file)});
+  currentImage=image;$('lensPreview').src=image;$('lensPreview').hidden=false;
+  box.appendChild(el('p','Image ready. Choose Quick or Thinking, then Analyze locally.','muted'));
+  return;
+ }
+ currentImage='';$('lensPreview').hidden=true;
+ let endpoint=null,contentType=null,limit=0;
+ if(name.endsWith('.pdf')){endpoint='/api/research/upload';contentType='application/pdf';limit=40*1024*1024;}
+ else if(/\.(txt|md|htm|html)$/.test(name)){
+  endpoint='/api/research/text';contentType=/\.(htm|html)$/.test(name)?'text/html':(name.endsWith('.md')?'text/markdown':'text/plain');limit=2*1024*1024;
+ }else throw Error('Drop PNG, JPEG, WEBP, PDF, TXT, MD, or HTML only');
+ if(file.size>limit||file.size<1)throw Error('File exceeds the allowed size limit');
+ const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':contentType,'X-File-Name':encodeURIComponent(file.name)},body:file});
+ const data=await response.json();if(!response.ok)throw Error(data.error||'Document import failed');
+ box.appendChild(el('p','Indexed locally: '+data.source.title+' · '+(data.source.chunks??0)+' passages'));
+ const b=el('button','Open Research & PDFs','secondary');b.type='button';b.addEventListener('click',()=>go('research'));box.appendChild(b);
+}
+$('lensImage').addEventListener('change',async e=>{try{await lensProcessDropped(e.target.files[0]);}catch(err){error(clear('lensResult'),err.message)}});
+const drop=$('lensDropZone');
+drop.addEventListener('click',()=>$('lensImage').click());drop.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('lensImage').click()}});
+drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('drag-hover')});
+drop.addEventListener('dragleave',e=>{if(!drop.contains(e.relatedTarget))drop.classList.remove('drag-hover')});
+drop.addEventListener('drop',async e=>{e.preventDefault();drop.classList.remove('drag-hover');drop.setAttribute('aria-busy','true');try{await lensProcessDropped(e.dataTransfer.files[0])}catch(err){error(clear('lensResult'),err.message)}finally{drop.setAttribute('aria-busy','false')}});
+$('lensForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('lensResult');if(!currentImage){error(box,'Choose an image (or drop a document to index it).');return}
+ const q=$('lensQ').value;try{
+ const selected=document.querySelector('[name=lensMode]:checked').value;
+ let data;
+ if(selected==='auto')data=await ask({action:'lens_analyze',prompt:q,image:currentImage,ocr_language:$('ocrLanguage').value,depth:$('lensDepth').value});
+ else data=await ask({action:selected==='image_search'?'image_search':selected==='ocr'?'ocr_image':'vision',prompt:q,image:currentImage,ocr_language:$('ocrLanguage').value});
+ if(data.answer)box.appendChild(el('p',data.answer));
+ if(data.ocr?.text)box.appendChild(el('p','OCR: '+data.ocr.text));
+ if(data.text)box.appendChild(el('p','OCR: '+data.text));
+ displaySources(box,data);
+ }catch(ex){error(box,ex.message)}});
+$('semanticSearch').addEventListener('click',async()=>{const box=clear('searchResult'),q=$('searchQ').value.trim();if(!q)return error(box,'Enter an article query first');try{const data=await ask({action:'semantic_search',prompt:q});box.appendChild(el('p','Search: '+data.mode+' · '+(data.results?.length||0)+' sources','muted'));displaySources(box,data);}catch(ex){error(box,ex.message)}});
 const translatorLanguages={auto:'Automatic detection',en:'English',pl:'Polish',de:'German',fr:'French',es:'Spanish',it:'Italian',pt:'Portuguese',nl:'Dutch',sv:'Swedish',fi:'Finnish',da:'Danish',no:'Norwegian',is:'Icelandic',et:'Estonian',lv:'Latvian',lt:'Lithuanian',cs:'Czech',sk:'Slovak',sl:'Slovenian',hr:'Croatian',bg:'Bulgarian',ro:'Romanian',hu:'Hungarian',el:'Greek',mt:'Maltese',ga:'Irish',ca:'Catalan',ru:'Russian',uk:'Ukrainian',be:'Belarusian',sr:'Serbian',bs:'Bosnian',tr:'Turkish',ar:'Arabic',zh:'Chinese',ja:'Japanese'};
 for(const [code,name] of Object.entries(translatorLanguages)){
  const s=el('option',name);s.value=code;$('sourceLanguage').appendChild(s);
