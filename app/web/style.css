@@ -12,3 +12,21 @@
 .article-photo{background:#0f1921;border:1px solid #364450;border-radius:10px;padding:8px;min-width:0}
 .article-photo img{height:130px;width:100%;object-fit:contain;background:#071018;border-radius:7px}
 .article-photo div{font-size:12px;line-height:1.4;padding-top:7px;overflow-wrap:anywhere}
+
+/* v7: readable, mobile-friendly offline route planner and map controls. */
+[hidden]{display:none!important}
+.vector-map{height:min(58vw,550px);min-height:350px;width:100%;border-radius:11px;background:#142633;overflow:hidden}
+.map-help{display:flex;align-items:center;gap:12px;justify-content:flex-start;margin:13px 0;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.map-help select{width:auto;max-width:320px;padding:9px}
+.route-points{display:grid;gap:9px;margin:13px 0}
+.route-points>label,.stop-row>label,.trip-mode label{font-weight:650;color:#bacddd;font-size:12px;letter-spacing:.03em}
+.route-panel{display:grid;gap:12px}
+.route-panel p{margin:4px 0;line-height:1.65}
+.route-panel .trip-mode{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.route-panel .trip-mode select{width:auto;flex:1;min-width:190px}
+.stop-row{display:grid;grid-template-columns:65px minmax(90px,1fr) auto;align-items:center;gap:10px}
+.stop-row button{white-space:nowrap}
+.route-panel .actions{display:flex;flex-wrap:wrap;gap:9px}
+.route-panel .result{margin-top:0}
+.route-panel .result h3{color:#d0ed88;margin-top:22px}
+@media(max-width:620px){.vector-map{min-height:310px}.stop-row{grid-template-columns:1fr auto}.stop-row label{grid-column:1/-1}.route-panel .trip-mode{display:grid}.route-panel .trip-mode select{width:100%}}
