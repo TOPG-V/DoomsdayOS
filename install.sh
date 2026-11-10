@@ -80,8 +80,8 @@ if [[ $(findmnt -n -o FSTYPE /) == zfs ]]; then
   # Keep local weekly recovery editions; use native ZFS sends for enrolled external drives.
   systemctl disable --now doomsday-external-sync.timer 2>/dev/null || true
 fi
-if command -v apt-get >/dev/null; then apt-get install -y --no-install-recommends iw kiwix-tools aria2 python3-pil python3-libzim poppler-utils || echo 'Kiwix/iw/aria2 optional packages unavailable (install later when Internet is available)' >&2; fi
-for f in systemd/doomsday-zim-index.* systemd/doomsday-recovery-watch-*.service systemd/doomsday-recovery-watch-*.timer systemd/doomsday-osrm.service systemd/doomsday-osrm-walk.service systemd/doomsday-ai-web.service systemd/doomsday-image-index.* systemd/doomsday-zim-download.* systemd/doomsday-hardware-recheck.* systemd/doomsday-kiwix.service systemd/doomsday-zim-protect.service systemd/doomsday-zim-verify.service systemd/doomsday-zim-verify.timer systemd/doomsday-stream-replica.service systemd/doomsday-stream-replica.timer; do install -m 0644 "$f" /etc/systemd/system/; done
+if command -v apt-get >/dev/null; then apt-get install -y --no-install-recommends iw kiwix-tools aria2 python3-pil python3-libzim poppler-utils tesseract-ocr tesseract-ocr-eng || echo 'Kiwix/iw/aria2 optional packages unavailable (install later when Internet is available)' >&2; fi
+for f in systemd/doomsday-maintenance-auto.* systemd/doomsday-zim-index.* systemd/doomsday-recovery-watch-*.service systemd/doomsday-recovery-watch-*.timer systemd/doomsday-osrm.service systemd/doomsday-osrm-walk.service systemd/doomsday-ai-web.service systemd/doomsday-image-index.* systemd/doomsday-zim-download.* systemd/doomsday-hardware-recheck.* systemd/doomsday-kiwix.service systemd/doomsday-zim-protect.service systemd/doomsday-zim-verify.service systemd/doomsday-zim-verify.timer systemd/doomsday-stream-replica.service systemd/doomsday-stream-replica.timer; do install -m 0644 "$f" /etc/systemd/system/; done
 # Fortnightly backup policy: preserve admin overrides and use systemd low-I/O priority.
 if [[ ! -f /etc/doomsday-vault/backup-policy.json ]]; then
   install -m 0600 /dev/null /etc/doomsday-vault/backup-policy.json
@@ -179,6 +179,18 @@ cd /opt/doomsday-firstboot/app
 exec /usr/bin/python3 research_library.py "$@"
 LAUNCH
 chmod 0755 /usr/local/bin/doomsday-research
+cat > /usr/local/bin/doomsday-maintenance <<'LAUNCH'
+#!/bin/sh
+cd /opt/doomsday-firstboot/app
+exec /usr/bin/python3 system_maintenance.py "$@"
+LAUNCH
+chmod 0755 /usr/local/bin/doomsday-maintenance
+cat > /usr/local/bin/doomsday-ocr <<'LAUNCH'
+#!/bin/sh
+cd /opt/doomsday-firstboot/app
+exec /usr/bin/python3 native_ocr.py "$@"
+LAUNCH
+chmod 0755 /usr/local/bin/doomsday-ocr
 chmod 0755 /usr/local/bin/doomsday-index-zims /usr/local/bin/doomsday-enrich-media /usr/local/bin/doomsday-maps /usr/local/bin/doomsday-trip /usr/local/bin/doomsday-recovery-watch
 if [[ $mode == ai ]]; then chmod 0755 /usr/local/bin/doomsday-ai; fi
 chmod 0755 /usr/local/bin/doomsday-recovery /usr/local/bin/doomsday-image-index /usr/local/bin/doomsday-index-text
@@ -190,7 +202,7 @@ fi
 if command -v zfs >/dev/null && zfs list -H tank/zims >/dev/null 2>&1; then
   if systemctl list-unit-files 'zfs-scrub-monthly@.timer' --no-legend 2>/dev/null | grep -q 'zfs-scrub-monthly@.timer'; then systemctl enable --now zfs-scrub-monthly@tank.timer || true; fi
 fi
-systemctl enable --now doomsday-backup.timer doomsday-zim-download.timer doomsday-hardware-recheck.timer doomsday-zim-verify.timer doomsday-stream-replica.timer doomsday-zim-protect.service doomsday-kiwix.service doomsday-ai-web.service doomsday-image-index.timer doomsday-zim-index.timer doomsday-recovery-watch-start.timer doomsday-recovery-watch-healthy.timer
+systemctl enable --now doomsday-maintenance-auto.timer doomsday-backup.timer doomsday-zim-download.timer doomsday-hardware-recheck.timer doomsday-zim-verify.timer doomsday-stream-replica.timer doomsday-zim-protect.service doomsday-kiwix.service doomsday-ai-web.service doomsday-image-index.timer doomsday-zim-index.timer doomsday-recovery-watch-start.timer doomsday-recovery-watch-healthy.timer
 # An upgrade must reload the new web server code; enabling an already active
 # service by itself would continue running the old Python process.
 systemctl try-restart doomsday-ai-web.service
@@ -229,3 +241,6 @@ echo 'Road/trail planner: sudo doomsday-trip status'
 echo 'Boot failure watcher: sudo doomsday-recovery-watch status (does NOT overwrite OS/EFI)'
 
 echo 'Research & PDF indexing: sudo doomsday-research --help (browser: http://localhost:8765 → Research & PDFs)'
+echo 'Safe OS diagnostics and repair planning: sudo doomsday-maintenance analyze'
+echo 'Reviewed repairs: sudo doomsday-maintenance apply ACTION --confirm APPLY-ACTION'
+echo 'Native OCR: tesseract-ocr is optional; language packs can be installed locally (tesseract-ocr-pol etc.)' 
