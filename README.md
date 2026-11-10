@@ -463,3 +463,72 @@ Re-run `sudo doomsday-index-zims add /path/to/verified/archive.zim --limit 1000`
 In the local Knowledge Search or Chat pages, select **Inspect selected article images** only when needed. This opt-in will load at most **two** bounded images, exclusively from the selected articles in the trusted verified ZIM manifest, resize them on the same machine, and send them to the **local llama.cpp vision server on 127.0.0.1:8083**. These model observations are treated as fallible supporting evidence, never as additional article sources; original article citations and links remain attached. The existing text model on port 8081 still answers from the title-selected excerpts. No images go to an external service. If python3-libzim, Pillow, the verified ZIM, or the local vision model is unavailable, it falls back to indexed text and author captions.
 
 Visual Lens **Find similar** continues to use traditional scripted aHash/dHash matching only; it does not invoke the vision or embedding model.
+
+## V6.9 — verified Kiwix direct HTTPS downloads + drive-aware download speed
+
+The **39 original ZIM archive paths and pinned checksums** from the provided original torrent collection are retained in `app/bundle_manifest.json` (38 preexisting SHA-256 values; the DevDocs Python archive must obtain its current publisher checksum). This update does **not** invent new ZIM version filenames or delete/rescan existing verified ZIM archives.
+
+**Official publisher format:** `https://download.kiwix.org/zim/<category>/<name>.zim` and adjacent `.zim.sha256`. The preflight probes only the first byte of each ZIM, reads the small checksum sidecar, checks byte length if available, optionally looks for an exact filename in OPDS, and reports any missing or changed file. It does **not** assume the historical version is still present in the live catalog. A matching sidecar verifies the expected digest but **only hashing the entire downloaded file proves it matches**. The SHA-256 source is a publisher checksum, not a digitally signed manifest.
+
+```bash
+# See all 39 archive URLs + pinned digests without network access:
+sudo doomsday-zims direct-list --source bundle
+
+# Check publisher sidecars, endpoint and catalog; saves an audit report:
+sudo doomsday-zims direct-check --source bundle
+
+# Stop any currently running transfer first; it retains its .zim.part data:
+sudo systemctl stop doomsday-zim-download.service
+
+# Verify existing queue entries against publisher SHA and switch only matches:
+sudo doomsday-zims direct-apply --source queue
+
+# Resume your existing queue using direct HTTPS and SHA-256 publishing:
+sudo systemctl start --no-block doomsday-zim-download.service
+sudo doomsday-zims status
+```
+
+If DNS fails, a publisher sidecar is missing, a digest or size differs, or an old archive version is gone, preflight records **NOT VERIFIED** and will not switch that queue item. Open `/var/lib/doomsday-vault/direct-links-report.json` for per-file results. HTTPS mirror-to-direct switching retains a `.zim.part` only if it refers to the exact same archive path and the expected SHA-256 matches; the downloader checks the completed file before making it read-only. On servers lacking HTTP Range resume the download may have to restart from zero.
+
+### Automatic transfer speed cap, safe disk benchmark and multiple torrents
+
+```bash
+# Benchmarks each enrolled ZFS staging dataset using 48 MiB of random data,
+# fsyncs and removes the temporary test. Does not touch the main archive dataset.
+sudo doomsday-zims tune-speed
+
+# Print per-drive budget and observed torrent speed:
+sudo doomsday-zims speed-status
+```
+
+The downloader uses **65% of measured write throughput**, capped at 160 MiB/s, for a conservative HTTP write cap. If a staging dataset has no valid measurement, it starts conservatively at 16 MiB/s and attempts a new small benchmark at most every 14 days when running under systemd. Benchmarks may be inflated by a VM's write cache, so the 35% margin and rate cap are deliberately conservative, not hard guarantees. ZFS snapshots, RAM pressure and concurrent workloads can change effective disk speed.
+
+For **multiple custom torrents**, supply a local JSON file with independently trusted SHA-256 for each single-file ZIM:
+
+```json
+[
+  {"torrent_file":"/home/user/Downloads/book1.torrent", "sha256":"<64-character-publisher-checksum>", "storage":"primary"},
+  {"torrent_file":"/home/user/Downloads/book2.torrent", "sha256":"<64-character-publisher-checksum>", "storage":"secondary"}
+]
+```
+
+Replace both placeholders with actual, independently trusted 64-character hexadecimal SHA-256 values. `secondary` is allowed only after enrolling a separate validated ZFS pool.
+
+```bash
+sudo doomsday-zims torrent-batch --batch-file /home/user/Downloads/my-zims.json --max-torrents 4
+```
+
+aria2 starts at **up to two simultaneous torrents per drive** when actual peer speed is unknown. After a completed wave, throughput history adjusts the next wave to 1–4 downloads: one when a torrent alone approaches the safe disk-write budget, several when individual torrent speeds are slow. A **shared aria2 aggregate speed cap** protects the staging drive even when peers suddenly accelerate. It also reduces wave size when simultaneous ZIMs would exceed staging space. Already downloaded and SHA-matching archives are skipped, and no torrent is published until its entire file passes SHA-256. A failed batch retains staged data for a safe retry. Torrents are local single-file `.zim.torrent` inputs only; do not submit unknown torrents without independent publisher checksums.
+
+HTTP downloads remain sequential and resumable. Large publisher files need enough free storage for staging **and** final publication, regardless of measured disk speed. No storage benchmark or download will repartition a drive or change ZFS copies settings.
+
+If you still have the original `Zim.zip` of 39 torrents, extract it and run this **instead of constructing a JSON manifest manually**:
+
+```bash
+unzip ~/Downloads/Zim.zip -d ~/Downloads/doomsday-original-torrents
+sudo doomsday-zims torrent-pack --torrent-dir ~/Downloads/doomsday-original-torrents/Zim --max-torrents 4
+```
+
+The importer matches each local single-file torrent's name and length against `bundle_manifest.json`, carries over your queue's primary/secondary drive placement, and requires the pinned trusted SHA-256. The Python DevDocs torrent is skipped if its publisher checksum was not obtained; it is **never published without verification**. This is an alternative for archives with unavailable direct HTTPS; for most users, verified HTTPS is the preferred faster mode. The existing direct download queue does not automatically spawn torrents.
+
+A machine-readable list of all 39 constructed official direct links and previously pinned checksums is shipped in `docs/KIWIX_DIRECT_39.tsv`. Its `live_status` column is `NOT_CHECKED` until the preflight runs on an Internet-connected host; do not interpret it as a live availability confirmation.
