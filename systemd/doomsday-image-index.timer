@@ -1,0 +1,9 @@
+[Unit]
+Description=Idle image index refresh when opted in
+[Timer]
+OnBootSec=15min
+OnUnitInactiveSec=1d
+Persistent=true
+Unit=doomsday-image-index.service
+[Install]
+WantedBy=timers.target
