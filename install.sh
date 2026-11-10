@@ -13,7 +13,7 @@ fi
 [[ $# -eq 0 || ${1:-} == --bootstrap ]] || { echo 'Usage: sudo ./install.sh [--bootstrap|--stage-only]'; exit 2; }
 install -d -m 0755 /opt/doomsday-firstboot
 if [[ $(pwd -P) != /opt/doomsday-firstboot ]]; then cp -a app systemd scripts vendor install.sh /opt/doomsday-firstboot/; fi
-install -d -m 0700 /etc/doomsday-vault /var/lib/doomsday-vault
+install -d -m 0700 /etc/doomsday-vault /var/lib/doomsday-vault /var/lib/doomsday-vault/research
 install -d -m 0755 /usr/share/doomsday-vault
 # GitHub text-file uploads may not preserve executable bits on optional scripts.
 install -m 0755 scripts/setup-maplibre.sh /opt/doomsday-firstboot/scripts/setup-maplibre.sh
@@ -39,7 +39,7 @@ if [[ $(findmnt -n -o FSTYPE /) == zfs ]]; then
   # Keep local weekly recovery editions; use native ZFS sends for enrolled external drives.
   systemctl disable --now doomsday-external-sync.timer 2>/dev/null || true
 fi
-if command -v apt-get >/dev/null; then apt-get install -y --no-install-recommends iw kiwix-tools aria2 python3-pil python3-libzim || echo 'Kiwix/iw/aria2 optional packages unavailable (install later when Internet is available)' >&2; fi
+if command -v apt-get >/dev/null; then apt-get install -y --no-install-recommends iw kiwix-tools aria2 python3-pil python3-libzim poppler-utils || echo 'Kiwix/iw/aria2 optional packages unavailable (install later when Internet is available)' >&2; fi
 for f in systemd/doomsday-zim-index.* systemd/doomsday-recovery-watch-*.service systemd/doomsday-recovery-watch-*.timer systemd/doomsday-osrm.service systemd/doomsday-osrm-walk.service systemd/doomsday-ai-web.service systemd/doomsday-llama-*.service systemd/doomsday-image-index.* systemd/doomsday-zim-download.* systemd/doomsday-hardware-recheck.* systemd/doomsday-kiwix.service systemd/doomsday-zim-protect.service systemd/doomsday-zim-verify.service systemd/doomsday-zim-verify.timer systemd/doomsday-stream-replica.service systemd/doomsday-stream-replica.timer; do install -m 0644 "$f" /etc/systemd/system/; done
 # Fortnightly backup policy: preserve admin overrides and use systemd low-I/O priority.
 if [[ ! -f /etc/doomsday-vault/backup-policy.json ]]; then
@@ -112,6 +112,12 @@ cat > /usr/local/bin/doomsday-recovery-watch <<'LAUNCH'
 cd /opt/doomsday-firstboot/app
 exec /usr/bin/python3 recovery_watch.py "$@"
 LAUNCH
+cat > /usr/local/bin/doomsday-research <<'LAUNCH'
+#!/bin/sh
+cd /opt/doomsday-firstboot/app
+exec /usr/bin/python3 research_library.py "$@"
+LAUNCH
+chmod 0755 /usr/local/bin/doomsday-research
 chmod 0755 /usr/local/bin/doomsday-index-zims /usr/local/bin/doomsday-enrich-media /usr/local/bin/doomsday-maps /usr/local/bin/doomsday-trip /usr/local/bin/doomsday-recovery-watch
 chmod 0755 /usr/local/bin/doomsday-ai /usr/local/bin/doomsday-recovery /usr/local/bin/doomsday-image-index /usr/local/bin/doomsday-index-text
 systemctl daemon-reload
@@ -147,3 +153,5 @@ echo 'Strict offroad trails: sudo doomsday-maps offroad /absolute/path/trails-an
 echo 'Optional MapLibre vector renderer: sudo /opt/doomsday-firstboot/scripts/setup-maplibre.sh (online once)'
 echo 'Road/trail planner: sudo doomsday-trip status'
 echo 'Boot failure watcher: sudo doomsday-recovery-watch status (does NOT overwrite OS/EFI)'
+
+echo 'Research & PDF indexing: sudo doomsday-research --help (browser: http://localhost:8765 → Research & PDFs)'
