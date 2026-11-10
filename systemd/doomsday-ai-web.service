@@ -12,6 +12,7 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 RestrictAddressFamilies=AF_INET AF_INET6
-MemoryMax=384M
+MemoryMax=768M
+ReadWritePaths=/var/lib/doomsday-vault/research
 [Install]
 WantedBy=multi-user.target
