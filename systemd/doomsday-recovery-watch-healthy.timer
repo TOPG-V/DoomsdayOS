@@ -1,0 +1,7 @@
+[Unit]
+Description=Check system root health after boot stabilization
+[Timer]
+OnBootSec=4min
+Unit=doomsday-recovery-watch-healthy.service
+[Install]
+WantedBy=timers.target
