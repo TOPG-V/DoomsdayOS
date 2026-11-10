@@ -1,0 +1,9 @@
+[Unit]
+Description=Optional, slow incremental semantic article index
+[Timer]
+OnBootSec=1h
+OnUnitInactiveSec=30min
+Persistent=true
+Unit=doomsday-semantic-index.service
+[Install]
+WantedBy=timers.target
