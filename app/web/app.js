@@ -12,7 +12,7 @@ function link(target,title,url){const a=el('a',title);a.href=url;a.target='_blan
 async function ask(payload){const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d;}
 function displaySources(box,res){if(res.kiwix){const p=el('p');p.append('Offline archive: ');link(p,'Open Kiwix search',res.kiwix);box.appendChild(p);}if(res.sources?.length||res.results?.length){const list=el('ul');(res.sources||res.results).forEach(s=>{const item=el('li');if(s.link)link(item,s.title||s.name,s.link);else item.textContent=s.title||s.name||'Result';if(s.snippet)item.appendChild(el('span',' — '+s.snippet));if(s.match_percent!=null)item.appendChild(el('span',' — '+s.match_percent+'% hash similarity'));list.appendChild(item)});box.appendChild(list);}const photos=res.images?.length?res.images:(res.mode==='classic_ahash_dhash'?res.results?.filter(s=>s.media_link).slice(0,12).map(s=>({image_url:s.media_link,article_link:s.link,title:s.name,alt:s.name})):[]);if(photos?.length){const title=el('h3',res.images?.length?'Images from the selected articles only':'Scripted similar-image matches');box.appendChild(title);const gallery=el('div',null,'article-gallery');for(const src of photos){const tile=el('div',null,'article-photo');const picture=el('img');picture.src=src.image_url;picture.alt=src.alt||src.title||'Article image';picture.loading='lazy';picture.referrerPolicy='no-referrer';tile.appendChild(picture);const caption=el('div');link(caption,src.title||'Open source article',src.article_link);tile.appendChild(caption);gallery.appendChild(tile)}box.appendChild(gallery);}if(res.visual_note)box.appendChild(el('p',res.visual_note,'muted'));if(res.note)box.appendChild(el('p',res.note,'muted'));}
 $('searchForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('searchResult'),q=$('searchQ').value,mode=document.querySelector('[name=searchMode]:checked').value;box.appendChild(el('p','Searching local sources...','muted'));try{const d=await ask({action:mode==='algorithmic'?'search':'chat',mode, prompt:q,visual_rag:$('ragVisualSearch').checked});clear('searchResult');if(d.answer)box.appendChild(el('p',d.answer));displaySources(box,d);}catch(ex){clear('searchResult');error(box,ex.message)}});
-$('chatForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('chatQ').value,mode=document.querySelector('[name=chatMode]:checked').value; if(!q.trim())return;$('chatQ').value='';const log=$('chatLog');const you=el('div',null,'message user');you.appendChild(el('small','YOU'));you.appendChild(el('p',q));log.appendChild(you);const ai=el('div',null,'message assistant');ai.appendChild(el('small','DOOMSDAY AI'));const content=el('p','Generating locally...');ai.appendChild(content);log.appendChild(ai);try{const d=await ask({action:'chat',mode,prompt:q,visual_rag:$('ragVisualChat').checked});content.textContent=d.answer||'No generated text';displaySources(ai,d);}catch(ex){content.textContent='Error: '+ex.message;}log.scrollTop=log.scrollHeight;});
+$('chatForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('chatQ').value,mode=document.querySelector('[name=chatMode]:checked').value; if(!q.trim())return;$('chatQ').value='';const log=$('chatLog');const you=el('div',null,'message user');you.appendChild(el('small','YOU'));you.appendChild(el('p',q));log.appendChild(you);const ai=el('div',null,'message assistant');ai.appendChild(el('small','DOOMSDAY AI'));const content=el('p','Generating locally...');ai.appendChild(content);log.appendChild(ai);try{const d=await ask({action:mode==='research'?'research_answer':'chat',mode,prompt:q,visual_rag:$('ragVisualChat').checked});content.textContent=d.answer||'No generated text';displaySources(ai,d);}catch(ex){content.textContent='Error: '+ex.message;}log.scrollTop=log.scrollHeight;});
 let currentImage='';
 $('lensImage').addEventListener('change',e=>{const file=e.target.files[0];currentImage='';$('lensPreview').hidden=true;if(!file)return;if(file.size>12*1024*1024){error(clear('lensResult'),'Image exceeds 12 MB');return}const reader=new FileReader();reader.onload=()=>{currentImage=String(reader.result);$('lensPreview').src=currentImage;$('lensPreview').hidden=false};reader.readAsDataURL(file);});
 $('lensForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('lensResult');if(!currentImage){error(box,'Choose an image first.');return}const q=$('lensQ').value;try{let mode=document.querySelector('[name=lensMode]:checked').value;if(mode==='auto'){const r=await ask({action:'route',prompt:q,image:currentImage});box.appendChild(el('p','Decision: '+r.decision.route+' ('+r.decision.method+')','muted'));mode=r.decision.route==='image_search'?'image_search':'vision';}const d=await ask({action:mode==='image_search'?'image_search':'vision',prompt:q,image:currentImage});if(d.answer)box.appendChild(el('p',d.answer));displaySources(box,d);}catch(ex){error(box,ex.message)}});
@@ -167,3 +167,58 @@ renderStops();mapInfo();
 $('mediaSearchForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('mediaSearchResult');try{const data=await ask({action:'media_search',prompt:$('mediaSearchQ').value,kind:$('mediaKind').value});displaySources(box,data);if(!data.results.length)box.appendChild(el('p','No indexed media matched. The background ZIM index may still be incomplete.'));}catch(ex){error(box,ex.message)}});
 async function recoveryStatus(){const box=$('recoveryWatchStatus');if(!box)return;try{const r=await fetch('/api/recovery/status');const d=await r.json();box.textContent=d.recovery_plan_ready?'Recovery plan ready after '+d.incomplete_boots+' incomplete boots. Inspect: sudo doomsday-recovery-watch plan':'Recovery watcher: '+d.incomplete_boots+' previous incomplete boots. No automatic destructive rollback.';}catch(e){box.textContent='Recovery status temporarily unavailable.'}}
 recoveryStatus();
+
+
+// v7.1 source-grounded research: article names, PDF pages, and explicit HTTPS imports.
+let researchSources=[];
+async function refreshResearchStatus(){
+ const out=$('researchStatus');if(!out)return;
+ try{const d=await (await fetch('/api/research/status')).json();
+ out.textContent=`Local sources: ${d.sources} · PDFs: ${d.pdfs} · webpages: ${d.webpages} · indexed passages: ${d.indexed_chunks}. Internet: disabled by default.`;
+ }catch(e){out.textContent='Research library is currently unavailable: '+e.message;}
+}
+function showResearchResults(results){
+ researchSources=results;const box=clear('researchResults');
+ if(!results.length){box.appendChild(el('p','No indexed sources matched. Try an article title or import a document.','muted'));return;}
+ for(const item of results){
+   const row=el('div',null,'research-hit');const top=el('div',null,'research-hit-head');
+   const choose=el('input');choose.type='checkbox';choose.className='research-choice';choose.value=item.id;choose.setAttribute('aria-label','Use source: '+item.title);
+   top.appendChild(choose);
+   const label=el('div');const title=el('strong');link(title,item.title,item.link);label.appendChild(title);
+   label.appendChild(el('small',item.kind.toUpperCase()+(item.page?' · PDF page '+item.page:'')));
+   top.appendChild(label);row.appendChild(top);
+   row.appendChild(el('p',item.snippet||'Indexed article — open the source to inspect it.','muted'));
+   const show=el('button','Read indexed text','secondary');show.type='button';
+   show.addEventListener('click',async()=>{const preview=el('div',null,'research-preview');preview.textContent='Opening local excerpt…';row.appendChild(preview);
+    try{const r=await ask({action:'research_open',source_id:item.id});preview.textContent=r.source.text||'No extracted text';}
+    catch(e){preview.textContent='Source unavailable: '+e.message;}});
+   row.appendChild(show);box.appendChild(row);
+ }
+}
+$('researchSearchForm').addEventListener('submit',async e=>{e.preventDefault();const out=clear('researchResults');out.appendChild(el('p','Searching indexed sources…','muted'));
+ try{const data=await ask({action:'research_search',prompt:$('researchQuery').value});showResearchResults(data.results||[])}
+ catch(err){clear('researchResults');error(out,err.message)}
+});
+$('researchPdfForm').addEventListener('submit',async e=>{e.preventDefault();const out=clear('researchPdfResult'),file=$('researchPdf').files[0];
+ if(!file)return;if(file.size>40*1024*1024){error(out,'PDF exceeds 40 MiB');return;}
+ out.appendChild(el('p','Extracting page text locally…','muted'));
+ try{const res=await fetch('/api/research/upload',{method:'POST',headers:{'Content-Type':'application/pdf','X-File-Name':encodeURIComponent(file.name)},body:file});
+   const data=await res.json();if(!res.ok)throw Error(data.error||'Upload failed');
+   clear('researchPdfResult');out.appendChild(el('p','Indexed '+data.source.title+' · '+data.source.pages+' pages · '+data.source.chunks+' passages.'));
+   await refreshResearchStatus();
+ }catch(err){clear('researchPdfResult');error(out,err.message)}
+});
+$('researchWebForm').addEventListener('submit',async e=>{e.preventDefault();const out=clear('researchWebResult');
+ try{const d=await ask({action:'research_import_url',url:$('researchUrl').value,allow_online:$('researchOnline').checked});
+ out.appendChild(el('p','Indexed: '+d.source.title));$('researchOnline').checked=false;await refreshResearchStatus();
+ }catch(err){error(out,err.message)}
+});
+$('researchAskForm').addEventListener('submit',async e=>{e.preventDefault();const out=clear('researchAnswer');out.appendChild(el('p','Collecting evidence…','muted'));
+ try{const selected=$('researchSelectedOnly').checked?Array.from(document.querySelectorAll('.research-choice:checked')).map(c=>c.value):null;
+   if(selected&&selected.length===0)throw Error('Select at least one indexed source above.');
+   const data=await ask({action:'research_answer',prompt:$('researchQuestion').value,source_ids:selected});
+   clear('researchAnswer');out.appendChild(el('p',data.answer||'No model answer.'));
+   displaySources(out,data);
+ }catch(err){clear('researchAnswer');error(out,err.message)}
+});
+refreshResearchStatus();
