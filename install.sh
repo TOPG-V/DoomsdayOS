@@ -15,6 +15,8 @@ install -d -m 0755 /opt/doomsday-firstboot
 if [[ $(pwd -P) != /opt/doomsday-firstboot ]]; then cp -a app systemd scripts vendor install.sh /opt/doomsday-firstboot/; fi
 install -d -m 0700 /etc/doomsday-vault /var/lib/doomsday-vault
 install -d -m 0755 /usr/share/doomsday-vault
+# GitHub text-file uploads may not preserve executable bits on optional scripts.
+install -m 0755 scripts/setup-maplibre.sh /opt/doomsday-firstboot/scripts/setup-maplibre.sh
 # Reuse the existing V2 backup/recovery system; don't format disks or adopt unknown drives.
 if [[ $(findmnt -n -o FSTYPE /) == zfs ]]; then
   if command -v zfs >/dev/null && command -v zpool >/dev/null; then
