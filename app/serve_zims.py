@@ -57,7 +57,7 @@ def serve_command(paths,exe,options=None):
     """Ubuntu Kiwix 3.5 lacks --skipInvalid; only use advertised flags."""
     options=supported_options(exe) if options is None else options
     cmd=[exe,'--port=8080']
-    if '--address' in options:cmd.append('--address=0.0.0.0')
+    # Do not force 0.0.0.0: some packaged Kiwix versions reject this\n    # wildcard as an IP not assigned to an interface. Use Kiwix's default bind.
     if '--blockexternal' in options:cmd.append('--blockexternal')
     if '--skipInvalid' in options:cmd.append('--skipInvalid')
     return cmd+list(map(str,paths))
@@ -71,7 +71,28 @@ def create_library(paths,manage=None,location=LIBRARY):
         staged=Path(d)/'library.xml'
         r=subprocess.run([manage,str(staged),'add',*map(str,paths)],capture_output=True,text=True,timeout=180,check=False)
         if r.returncode or not staged.is_file() or not staged.stat().st_size:
-            raise RuntimeError('kiwix-manage failed: '+(r.stderr or r.stdout).strip()[:400])
+            # A single malformed archive should not hide other working ZIMs.
+            # Validate separately in temporary XML libraries; never modify ZIMs.
+            print('Kiwix combined library failed; isolating invalid entries:',
+                  (r.stderr or r.stdout).strip()[:400],file=sys.stderr,flush=True)
+            good=[]
+            for i,archive in enumerate(paths):
+                probe=Path(d)/('probe-'+str(i)+'.xml')
+                result=subprocess.run([manage,str(probe),'add',str(archive)],
+                                      capture_output=True,text=True,timeout=180,check=False)
+                if result.returncode == 0 and probe.is_file() and probe.stat().st_size:
+                    good.append(archive)
+                else:
+                    print('Skipping unreadable/invalid ZIM',archive,
+                          (result.stderr or result.stdout).strip()[:200],
+                          file=sys.stderr,flush=True)
+            if not good:
+                raise RuntimeError('No ZIM accepted by kiwix-manage; check file integrity and permissions')
+            staged.unlink(missing_ok=True)
+            r=subprocess.run([manage,str(staged),'add',*map(str,good)],
+                             capture_output=True,text=True,timeout=180,check=False)
+            if r.returncode or not staged.is_file() or not staged.stat().st_size:
+                raise RuntimeError('kiwix-manage retry failed: '+(r.stderr or r.stdout).strip()[:400])
         os.chmod(staged,0o644)
         os.replace(staged,location)
     return location
