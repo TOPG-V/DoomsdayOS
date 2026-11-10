@@ -1,0 +1,13 @@
+[Unit]
+Description=DoomsdayOS llama.cpp vision inference (opt-in, local only)
+After=local-fs.target
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/llama_runtime.py serve vision
+Restart=on-failure
+RestartSec=15
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+[Install]
+WantedBy=multi-user.target
