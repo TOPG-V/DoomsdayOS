@@ -45,3 +45,12 @@
 .research-consent{display:flex;align-items:flex-start;gap:9px;color:var(--muted);font-size:13px;letter-spacing:0!important;text-transform:none!important}
 .research-consent input{margin-top:4px}
 @media(max-width:820px){.research-two-col{grid-template-columns:1fr}}
+
+[hidden]{display:none!important}
+
+/* v7.4: optional private manual position, usable without GPS or AI. */
+.manual-location-panel{margin:15px 0;padding:17px;border:1px solid var(--line);background:var(--panel2);border-radius:11px}
+.manual-location-panel h3{margin:0 0 9px;font-size:16px}
+.manual-location-panel>label{display:block;margin:14px 0 8px}
+.manual-location-panel .actions{margin-top:10px}
+.manual-location-panel #manualLocationStatus{margin:12px 0 0;overflow-wrap:anywhere}
