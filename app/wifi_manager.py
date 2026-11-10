@@ -68,6 +68,15 @@ def ensure_hotspot():
         run('nmcli','con','mod',PROFILE,'connection.interface-name',dev)
     res=run('nmcli','con','up',PROFILE,'ifname',dev)
     print('Hotspot active on '+dev if res.returncode==0 else 'Hotspot activation failed: '+res.stderr.strip())
+    if res.returncode==0:
+        # Bind read-only landing page to *this* AP address, not arbitrary LAN.
+        subprocess.run(['systemctl','enable','--now','doomsday-hotspot-portal.service'],capture_output=True,text=True,check=False)
+        subprocess.run(['systemctl','try-restart','doomsday-hotspot-portal.service'],capture_output=True,text=True,check=False)
+        try:
+            from hotspot_portal import hotspot_address
+            address=hotspot_address(dev)
+            print(f'Connected clients: http://{address}:8780  ·  Kiwix: http://{address}:8080')
+        except (OSError,RuntimeError,ValueError):pass
 
 def configure():
     print('Available wireless adapters:');hotspot_status()
