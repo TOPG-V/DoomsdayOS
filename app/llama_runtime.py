@@ -60,6 +60,7 @@ def command_for(role):
     if vram<model_bytes*1.5:profile['gpu_layers']=0
     elif vram<model_bytes*2:profile['gpu_layers']=min(profile['gpu_layers'],12)
     argv=llama_args(entry['file'],profile,ROLES[role],exe)
+    if role=='text':argv+=['--jinja']
     if role=='decision':
         argv+=['--embedding','--pooling','mean']
     if role=='vision' and entry.get('mmproj'):
@@ -72,10 +73,21 @@ def main():
     sub=p.add_subparsers(dest='cmd',required=True)
     x=sub.add_parser('register');x.add_argument('role',choices=ROLES);x.add_argument('file');x.add_argument('--mmproj')
     x=sub.add_parser('serve');x.add_argument('role',choices=ROLES)
-    sub.add_parser('list');sub.add_parser('recommend')
+    sub.add_parser('list');sub.add_parser('recommend');sub.add_parser('status');sub.add_parser('auto-start')
     a=p.parse_args()
-    if a.cmd=='register':print('Registered:',register(a.role,a.file,a.mmproj))
+    if a.cmd=='register':
+        print('Registered:',register(a.role,a.file,a.mmproj))
+        # Refresh the local residency manager so it considers newly registered models.
+        if os.geteuid()==0 and shutil.which('systemctl'):
+            subprocess.run(['systemctl','try-restart','doomsday-model-manager.service'],check=False,timeout=8)
     elif a.cmd=='list':print(json.dumps(load_config(),indent=2))
+    elif a.cmd=='status':
+        from model_scheduler import call
+        print(json.dumps(call('/status'),indent=2))
+    elif a.cmd=='auto-start':
+        if os.geteuid()!=0:raise RuntimeError('Run auto-start with sudo')
+        subprocess.run(['systemctl','enable','--now','doomsday-model-manager.service'],check=True)
+        print('Adaptive model manager started. Register GGUF models then check: sudo doomsday-ai status')
     elif a.cmd=='recommend':
         print('Hardware profile:',json.dumps(inference_profile(),indent=2))
         print('Suggested user-requested model labels (verify compatible GGUF builds before choosing):')
