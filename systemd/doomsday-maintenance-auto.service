@@ -1,0 +1,14 @@
+[Unit]
+Description=DoomsdayOS limited reader-service self-heal (no storage or package writes)
+After=local-fs.target
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/system_maintenance.py auto
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=80
+UMask=0077
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX
