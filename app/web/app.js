@@ -24,8 +24,8 @@ async function installModeUI(){
 }
 window.addEventListener('DOMContentLoaded',installModeUI);
 const $=id=>document.getElementById(id);
-const nameMap={home:'Overview',search:'Knowledge Search',chat:'Local Chat',lens:'Visual Lens',translate:'Translate',map:'World Maps',maintenance:'System Health',models:'AI & Hardware',research:'Research & PDFs'};
-function go(name){document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active',el.id===name));document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===name));$('pageName').textContent=nameMap[name]||name;location.hash=name==='home'?'':name;if(name==='models')hardware();}
+const nameMap={home:'Overview',search:'Knowledge Search',chat:'Local Chat',lens:'Visual Lens',translate:'Translate',map:'World Maps',maintenance:'System Health',models:'AI & Hardware',research:'Research & PDFs',downloads:'ZIM Downloads'};
+function go(name){document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active',el.id===name));document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===name));$('pageName').textContent=nameMap[name]||name;location.hash=name==='home'?'':name;if(name==='models')hardware();if(name==='downloads')refreshZims();}
 document.querySelectorAll('[data-tab]').forEach(el=>el.addEventListener('click',()=>go(el.dataset.tab)));
 document.querySelectorAll('[data-goto]').forEach(el=>el.addEventListener('click',()=>go(el.dataset.goto)));
 if(nameMap[location.hash.slice(1)])go(location.hash.slice(1));
@@ -406,3 +406,64 @@ $('runDiagnostic').addEventListener('click',async()=>{
  for(const [name,result] of Object.entries(d.results||{})){const row=el('div',null,'research-hit');row.appendChild(el('h3',name));row.appendChild(el('pre',result.text||'No output'));out.appendChild(row)}
  }catch(err){error(out,err.message)}
 });
+
+
+// Archive Download Manager: DOM text nodes only (no user-provided HTML).
+let zimPollBusy=false;
+function formattedBytes(n){if(!Number.isFinite(n)||n<0)return 'Unknown size';const u=['B','KiB','MiB','GiB','TiB'];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++}return n.toFixed(i?1:0)+' '+u[i]}
+async function refreshZims(){
+ if(zimPollBusy||!$('zimQueue'))return;
+ zimPollBusy=true;
+ try{
+  const response=await fetch('/api/zims/downloads',{cache:'no-store'});
+  const data=await response.json();
+  if(!response.ok)throw Error(data.error||'Could not fetch queue');
+  const queue=clear('zimQueue'), installed=clear('zimInventory');
+  $('zimTotal').textContent=String(data.queue.length);
+  $('zimActive').textContent=String(data.queue.filter(x=>x.status==='downloading').length);
+  $('zimInstalled').textContent=String(data.downloaded.length);
+  if(!data.queue.length)queue.appendChild(el('p','No downloads queued yet.','muted'));
+  for(const item of data.queue){
+   const row=el('article',null,'zim-row');
+   const headline=el('div',null,'download-heading');
+   headline.appendChild(el('strong',item.name));
+   headline.appendChild(el('span',item.status,'zim-state'));
+   row.appendChild(headline);
+   const bar=el('progress');bar.max=100;
+   if(item.percent!=null)bar.value=item.percent;
+   bar.setAttribute('aria-label','Download progress for '+item.name);
+   row.appendChild(bar);
+   const detail=item.percent==null?'Size unknown / waiting':item.percent+'% • '+formattedBytes(item.bytes_received)+' staged of '+formattedBytes(item.bytes_total);
+   row.appendChild(el('p',detail+' • '+item.drive,'muted'));
+   if(item.error)row.appendChild(el('p',item.error,'error'));
+   queue.appendChild(row);
+  }
+  if(!data.downloaded.length)installed.appendChild(el('p','No published ZIM files found on the mounted archive datasets.','muted'));
+  for(const item of data.downloaded){
+   const row=el('div',null,'download-heading zim-inventory');
+   row.appendChild(el('span',item.name));
+   row.appendChild(el('small',formattedBytes(item.bytes)+' • '+item.drive));
+   installed.appendChild(row);
+  }
+  for(const warning of data.warnings||[])queue.appendChild(el('p','Storage unavailable: '+warning,'error'));
+ }catch(err){const q=clear('zimQueue');error(q,err.message)}
+ finally{zimPollBusy=false}
+}
+$('refreshZims')?.addEventListener('click',refreshZims);
+$('zimAddForm')?.addEventListener('submit',async event=>{
+ event.preventDefault();
+ const out=clear('zimAddResult');
+ const button=$('zimAddForm').querySelector('button[type="submit"]');
+ button.disabled=true;
+ try{
+  const payload={url:$('zimUrl').value.trim(),sha256:$('zimSha').value.trim(),size:Number($('zimSize').value)};
+  if(!Number.isSafeInteger(payload.size)||payload.size<=0)throw Error('Enter the exact size in bytes');
+  const r=await fetch('/api/zims/enqueue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const result=await r.json();
+  if(!r.ok)throw Error(result.error||'Unable to enqueue');
+  out.appendChild(el('p','Queued '+result.queued+'. '+result.note));
+  $('zimAddForm').reset();await refreshZims();
+ }catch(err){error(out,err.message)}
+ finally{button.disabled=false}
+});
+setInterval(()=>{if(location.hash==='#downloads')refreshZims()},5000);
