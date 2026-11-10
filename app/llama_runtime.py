@@ -55,9 +55,20 @@ def command_for(role):
     # Conservative GPU memory guard based on actual GGUF file size.
     try:model_bytes=Path(entry['file']).stat().st_size
     except OSError as e:raise RuntimeError('GGUF file missing: '+entry['file']) from e
-    vram=profile['vram_free_mib']*1048576
-    if vram<model_bytes*1.5:profile['gpu_layers']=0
-    elif vram<model_bytes*2:profile['gpu_layers']=min(profile['gpu_layers'],12)
+    from llama_backend import choose
+    runtime=choose(exe)
+    if runtime['backend']=='cpu':
+        profile['gpu_layers']=0
+    elif runtime['backend']=='cuda':
+        # NVIDIA can report free VRAM. Keep conservative guards.
+        vram=profile['vram_free_mib']*1048576
+        if vram<model_bytes*1.5:profile['gpu_layers']=0
+        elif vram<model_bytes*2:profile['gpu_layers']=min(12,max(1,profile['gpu_layers']))
+        else:profile['gpu_layers']=99
+    else:
+        # Vulkan/ROCm VRAM measurements are not portable. Start with partial
+        # offload, allow llama.cpp to reject unsupported memory configurations.
+        profile['gpu_layers']=12
     argv=llama_args(entry['file'],profile,ROLES[role],exe)
     if role=='text':argv+=['--jinja']
     if role=='decision':
