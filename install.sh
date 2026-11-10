@@ -81,7 +81,7 @@ if [[ $(findmnt -n -o FSTYPE /) == zfs ]]; then
   systemctl disable --now doomsday-external-sync.timer 2>/dev/null || true
 fi
 if command -v apt-get >/dev/null; then apt-get install -y --no-install-recommends iw kiwix-tools aria2 python3-pil python3-libzim poppler-utils tesseract-ocr tesseract-ocr-eng || echo 'Kiwix/iw/aria2 optional packages unavailable (install later when Internet is available)' >&2; fi
-for f in systemd/doomsday-maintenance-auto.* systemd/doomsday-zim-index.* systemd/doomsday-recovery-watch-*.service systemd/doomsday-recovery-watch-*.timer systemd/doomsday-osrm.service systemd/doomsday-osrm-walk.service systemd/doomsday-ai-web.service systemd/doomsday-image-index.* systemd/doomsday-zim-download.* systemd/doomsday-hardware-recheck.* systemd/doomsday-kiwix.service systemd/doomsday-zim-protect.service systemd/doomsday-zim-verify.service systemd/doomsday-zim-verify.timer systemd/doomsday-stream-replica.service systemd/doomsday-stream-replica.timer; do install -m 0644 "$f" /etc/systemd/system/; done
+for f in systemd/doomsday-semantic-index.* systemd/doomsday-always-on.service systemd/doomsday-hotspot-portal.service systemd/doomsday-maintenance-auto.* systemd/doomsday-zim-index.* systemd/doomsday-recovery-watch-*.service systemd/doomsday-recovery-watch-*.timer systemd/doomsday-osrm.service systemd/doomsday-osrm-walk.service systemd/doomsday-ai-web.service systemd/doomsday-image-index.* systemd/doomsday-zim-download.* systemd/doomsday-hardware-recheck.* systemd/doomsday-kiwix.service systemd/doomsday-zim-protect.service systemd/doomsday-zim-verify.service systemd/doomsday-zim-verify.timer systemd/doomsday-stream-replica.service systemd/doomsday-stream-replica.timer; do install -m 0644 "$f" /etc/systemd/system/; done
 # Fortnightly backup policy: preserve admin overrides and use systemd low-I/O priority.
 if [[ ! -f /etc/doomsday-vault/backup-policy.json ]]; then
   install -m 0600 /dev/null /etc/doomsday-vault/backup-policy.json
@@ -185,6 +185,22 @@ cd /opt/doomsday-firstboot/app
 exec /usr/bin/python3 system_maintenance.py "$@"
 LAUNCH
 chmod 0755 /usr/local/bin/doomsday-maintenance
+cat > /usr/local/bin/doomsday-fleet <<'LAUNCH'
+#!/bin/sh
+cd /opt/doomsday-firstboot/app
+exec /usr/bin/python3 storage_fleet.py "$@"
+LAUNCH
+cat > /usr/local/bin/doomsday-power <<'LAUNCH'
+#!/bin/sh
+cd /opt/doomsday-firstboot/app
+exec /usr/bin/python3 always_on.py "$@"
+LAUNCH
+cat > /usr/local/bin/doomsday-semantic <<'LAUNCH'
+#!/bin/sh
+cd /opt/doomsday-firstboot/app
+exec /usr/bin/python3 semantic_rag.py "$@"
+LAUNCH
+chmod 0755 /usr/local/bin/doomsday-fleet /usr/local/bin/doomsday-power /usr/local/bin/doomsday-semantic
 cat > /usr/local/bin/doomsday-ocr <<'LAUNCH'
 #!/bin/sh
 cd /opt/doomsday-firstboot/app
@@ -194,6 +210,8 @@ chmod 0755 /usr/local/bin/doomsday-ocr
 chmod 0755 /usr/local/bin/doomsday-index-zims /usr/local/bin/doomsday-enrich-media /usr/local/bin/doomsday-maps /usr/local/bin/doomsday-trip /usr/local/bin/doomsday-recovery-watch
 if [[ $mode == ai ]]; then chmod 0755 /usr/local/bin/doomsday-ai; fi
 chmod 0755 /usr/local/bin/doomsday-recovery /usr/local/bin/doomsday-image-index /usr/local/bin/doomsday-index-text
+# The hotspot portal is bound to an enrolled AP address. Always-on is
+# intentionally opt-in; preserve existing enablement across upgrades.
 systemctl daemon-reload
 if [[ $mode == ai ]]; then
   systemctl enable --now doomsday-model-manager.service
@@ -244,3 +262,9 @@ echo 'Research & PDF indexing: sudo doomsday-research --help (browser: http://lo
 echo 'Safe OS diagnostics and repair planning: sudo doomsday-maintenance analyze'
 echo 'Reviewed repairs: sudo doomsday-maintenance apply ACTION --confirm APPLY-ACTION'
 echo 'Native OCR: tesseract-ocr is optional; language packs can be installed locally (tesseract-ocr-pol etc.)' 
+
+echo 'Wi-Fi hotspot setup: sudo doomsday-wifi setup (uses an idle AP-capable adapter)'
+echo 'Hotspot landing page after setup: see sudo doomsday-wifi scan, usually http://10.42.0.1:8780'
+echo 'Opt-in AC-aware Always On: sudo doomsday-power enable (not effective while a VM host sleeps)'
+echo 'Storage fleet 1..50 pools: sudo doomsday-fleet scan / plan / enroll POOL / apply'
+echo 'Local EmbeddingGemma RAG (model/runtime separate): sudo doomsday-semantic status / index / search QUERY'
