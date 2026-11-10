@@ -1,0 +1,17 @@
+[Unit]
+Description=DoomsdayOS local offline AI workspace
+After=network.target doomsday-kiwix.service
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/ai_gateway.py --port 8765
+Restart=on-failure
+RestartSec=8
+NoNewPrivileges=true
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryMax=384M
+[Install]
+WantedBy=multi-user.target
