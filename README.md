@@ -590,3 +590,10 @@ Detailed usage and limitations: [`docs/RESEARCH_V71.md`](docs/RESEARCH_V71.md). 
 - To disable automatic reader-service recovery: `sudo systemctl disable --now doomsday-maintenance-auto.timer`.
 
 **Do not treat a clean diagnostic report as proof that all files are intact.** Keep SHA-verified external ZIM backups and schedule scrubs on redundant pools. When the ZIM dataset uses `copies=1`, checksums detect errors but cannot provide a missing replacement block.
+
+
+## v7.4 — manual location without GPS
+
+The **World Maps** page now includes **Set my location manually**. Enter `latitude,longitude` (e.g. `51.108,17.038`), use an unambiguous name from an enrolled **offline places CSV**, or choose **My location (manual)** in the map-click selector and click the map. The selected place is used as the default **From** point and can be reused after browser restarts. **Use my location as route start** fills the route field; you may also enter `current`, `my location` or `here` there when the manual point is saved. **Forget saved location** clears the browser's saved point.
+
+Manually selected coordinates are saved **only in that browser's local storage** (when enabled), not transmitted to DoomsdayOS or the AI by default. The LLM only sees the saved coordinates for a particular trip request if you deliberately check the Chat tab's **Share my saved manual location** box; when no manual point exists, the browser will offer GPS with permission instead. Core/no-AI mode supports manual location and offline routing. GPS acquisition never silently saves its coordinates as the manual position. Exact place names need the offline gazetteer; coordinates and map clicks do not. Routing still requires the correct offline OSRM/trail graph and will not invent routes through missing data.
