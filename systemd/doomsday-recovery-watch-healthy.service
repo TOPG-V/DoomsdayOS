@@ -1,0 +1,10 @@
+[Unit]
+Description=Confirm usable ZFS root after startup; clear boot failure streak
+After=local-fs.target doomsday-recovery-watch-start.service
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/recovery_watch.py boot-healthy
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/doomsday-vault
+TimeoutStartSec=45s
