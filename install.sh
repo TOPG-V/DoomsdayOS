@@ -37,8 +37,8 @@ if [[ $(findmnt -n -o FSTYPE /) == zfs ]]; then
   # Keep local weekly recovery editions; use native ZFS sends for enrolled external drives.
   systemctl disable --now doomsday-external-sync.timer 2>/dev/null || true
 fi
-if command -v apt-get >/dev/null; then apt-get install -y --no-install-recommends iw kiwix-tools || echo 'Kiwix/iw optional packages unavailable (install later when Internet is available)' >&2; fi
-for f in systemd/doomsday-zim-download.* systemd/doomsday-hardware-recheck.* systemd/doomsday-kiwix.service systemd/doomsday-zim-protect.service systemd/doomsday-zim-verify.service systemd/doomsday-zim-verify.timer systemd/doomsday-stream-replica.service systemd/doomsday-stream-replica.timer; do install -m 0644 "$f" /etc/systemd/system/; done
+if command -v apt-get >/dev/null; then apt-get install -y --no-install-recommends iw kiwix-tools aria2 || echo 'Kiwix/iw/aria2 optional packages unavailable (install later when Internet is available)' >&2; fi
+for f in systemd/doomsday-ai-web.service systemd/doomsday-llama-*.service systemd/doomsday-image-index.* systemd/doomsday-zim-download.* systemd/doomsday-hardware-recheck.* systemd/doomsday-kiwix.service systemd/doomsday-zim-protect.service systemd/doomsday-zim-verify.service systemd/doomsday-zim-verify.timer systemd/doomsday-stream-replica.service systemd/doomsday-stream-replica.timer; do install -m 0644 "$f" /etc/systemd/system/; done
 # Fortnightly backup policy: preserve admin overrides and use systemd low-I/O priority.
 if [[ ! -f /etc/doomsday-vault/backup-policy.json ]]; then
   install -m 0600 /dev/null /etc/doomsday-vault/backup-policy.json
@@ -65,11 +65,32 @@ cd /opt/doomsday-firstboot/app
 exec /usr/bin/python3 wifi_manager.py "$@"
 LAUNCH
 chmod 0755 /usr/local/bin/doomsday-setup /usr/local/bin/doomsday-zims /usr/local/bin/doomsday-wifi
+cat > /usr/local/bin/doomsday-index-text <<'LAUNCH'
+#!/bin/sh
+cd /opt/doomsday-firstboot/app
+exec /usr/bin/python3 local_index.py "$@"
+LAUNCH
+cat > /usr/local/bin/doomsday-image-index <<'LAUNCH'
+#!/bin/sh
+cd /opt/doomsday-firstboot/app
+exec /usr/bin/python3 media_index.py "$@"
+LAUNCH
+cat > /usr/local/bin/doomsday-ai <<'LAUNCH'
+#!/bin/sh
+cd /opt/doomsday-firstboot/app
+exec /usr/bin/python3 llama_runtime.py "$@"
+LAUNCH
+cat > /usr/local/bin/doomsday-recovery <<'LAUNCH'
+#!/bin/sh
+cd /opt/doomsday-firstboot/app
+exec /usr/bin/python3 recovery_advisor.py "$@"
+LAUNCH
+chmod 0755 /usr/local/bin/doomsday-ai /usr/local/bin/doomsday-recovery /usr/local/bin/doomsday-image-index /usr/local/bin/doomsday-index-text
 systemctl daemon-reload
 if command -v zfs >/dev/null && zfs list -H tank/zims >/dev/null 2>&1; then
   if systemctl list-unit-files 'zfs-scrub-monthly@.timer' --no-legend 2>/dev/null | grep -q 'zfs-scrub-monthly@.timer'; then systemctl enable --now zfs-scrub-monthly@tank.timer || true; fi
 fi
-systemctl enable --now doomsday-backup.timer doomsday-zim-download.timer doomsday-hardware-recheck.timer doomsday-zim-verify.timer doomsday-stream-replica.timer doomsday-zim-protect.service doomsday-kiwix.service
+systemctl enable --now doomsday-backup.timer doomsday-zim-download.timer doomsday-hardware-recheck.timer doomsday-zim-verify.timer doomsday-stream-replica.timer doomsday-zim-protect.service doomsday-kiwix.service doomsday-ai-web.service doomsday-image-index.timer
 systemctl disable doomsday-bootstrap.service 2>/dev/null || true
 touch /var/lib/doomsday-vault/bootstrap-complete
 printf '\nDoomsday first-boot services installed. No disk formatting performed.\n'
@@ -78,6 +99,11 @@ echo 'ZIM queue: sudo doomsday-zims status'
 echo 'Change selected ZIM backups: sudo doomsday-zims backups'
 echo 'Optional separate ZFS pool: sudo doomsday-zims dual-setup && sudo doomsday-zims optimize'
 echo 'Offline knowledge browser: http://localhost:8080 from Ubuntu'
+echo 'Local AI web UI: http://localhost:8765 (requires local llama.cpp models for AI generation)'
+echo 'AI model setup: sudo doomsday-ai register text /path/to/model.gguf'
+echo 'Optional idle image indexing: sudo doomsday-image-index enroll /path/to/pictures'
+echo 'Optional custom torrent: sudo doomsday-zims import-torrent --torrent-file /path/to/file.torrent --sha256 EXPECTED_SHA256'
+echo 'Read-only OS recovery advisor: sudo doomsday-recovery report'
 echo 'Immutable archive: sudo python3 /opt/doomsday-firstboot/app/archive_guard.py status'
 echo 'Drive backup enrollment: sudo /usr/local/lib/doomsday-vault/enroll-external.sh POOL/DATASET'
 echo 'Safe portability report: sudo /opt/doomsday-firstboot/scripts/portability-report.sh'
