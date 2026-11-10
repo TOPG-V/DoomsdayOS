@@ -53,7 +53,7 @@ def determine_policy(entries,total_mib,available_mib):
 
 class Manager:
     def __init__(self,spawn=None,health=None,ram=None,total=None,clock=None):
-        self.spawn=spawn or (lambda argv:subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True))
+        self.spawn=spawn or (lambda argv:subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=None,stderr=None,start_new_session=True))
         self.health=health or self._health
         self.ram=ram or usable_ram_mib
         self.total=total or mem_total_mib
