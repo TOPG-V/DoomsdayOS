@@ -253,3 +253,103 @@ In dual mode, Kiwix automatically serves all available, published `.zim` files f
 The installed programs are in `/opt/doomsday-firstboot`, their state in `/var/lib/doomsday-vault`, and ZIMs in the configured ZFS datasets. Verify `test -f /opt/doomsday-firstboot/app/zim_manager.py && sudo doomsday-zims status` before deleting the **extracted installer directory** from Downloads. Never delete `/opt/doomsday-firstboot` or the library datasets. Keep the ZIP as an offline reinstatement option if useful.
 
 **Testing:** All local Python unit tests and shell syntax checks pass. Actual disk imports, pooled storage balancing, unplug events, large downloads, and live Kiwix servicing must still be tested on disposable disks or a VM before trusting the result for disaster recovery.
+
+### Live backup-choice edits and download-worker safety (V6.5.1)
+
+Changing backup preferences via `sudo doomsday-zims backups` is possible while a large original file is downloading: the queue JSON lock is held only briefly while updating statuses, not for the whole network transfer. A separate exclusive worker lock prevents concurrent ZIM download writers from corrupting a `.part` file. The worker reloads backup choices and backup destination before starting its backup phase. Selected backups remain deferred until original downloads are all verified, so the largest staging archive and the selected backup set do not need to coexist at full size.
+
+**Changing which physical pool holds an original** is different: stop the downloader first, since changing drive placement in the middle of a network transfer would be unsafe:
+
+```bash
+sudo systemctl stop doomsday-zim-download.service
+sudo doomsday-zims dual-setup
+sudo doomsday-zims optimize
+sudo systemctl start --no-block doomsday-zim-download.service
+```
+
+Stopping a running transfer can leave a resumable `.zim.part` in its enrolled staging dataset; the optimizer keeps it on that pool. Do not move or delete the partial file by hand. The automatic download timer remains installed and starts further eligible work later. Use `sudo doomsday-zims status` to inspect individual states.
+
+## V6.6 — Offline web workspace, fast multimodal decisions, custom torrents and recovery advisor (prototype)
+
+This is an **incremental Ubuntu/ZFS implementation**, built independently of the Fedora/Ollama code in the GPL-3.0 [cartesia-one/doomsday-os](https://github.com/cartesia-one/doomsday-os) reference. Its agent-and-offline-knowledge ideas informed the architecture, but its source files have not been copied. We use llama.cpp, not Ollama.
+
+### Open the local web app
+
+After installing V6.6, open **http://127.0.0.1:8765** in Firefox **inside Ubuntu**. The web interface has pages for Overview, Knowledge Search, Local Chat, Visual Lens, Translate, World Maps and AI & Hardware. The existing native Kiwix library remains at **http://127.0.0.1:8080**. The HTTP gateway listens only on loopback (`127.0.0.1`), uses standard Python, and never calls cloud LLM services. The UI loads even when no models are installed; AI generation does **not** work until the corresponding llama.cpp servers and compatible weights are present.
+
+#### llama.cpp setup (explicit install; no model downloads included)
+
+Install a compatible current `llama-server` using the official [llama.cpp build guide](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md). For a typical low-memory Ubuntu VM (CPU build):
+
+```bash
+sudo apt-get install -y git cmake build-essential
+cd /tmp && git clone --depth=1 https://github.com/ggml-org/llama.cpp.git
+cd /tmp/llama.cpp && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release -j 2
+sudo install -m 0755 build/bin/llama-server /usr/local/bin/llama-server
+```
+
+Obtain compatible **GGUF model files** separately from their original publishers. Some named model families might require conversion or a particular llama.cpp build, and not every multimodal or audio encoder is GGUF-compatible. The model labels are candidates, **not bundled downloads or compatibility guarantees**: Spark X2.6 1.7B and 4B, Bonsai 27B, Orith A3B, Qwopus 3.5 9B, LFM 2.3 Omni 2B, EmbeddingGemma 2. Verify the exact model family, license, architecture and file before registering it. Larger models like 27B require considerably more memory than small 1–4B models.
+
+```bash
+sudo doomsday-ai recommend
+sudo doomsday-ai register text /path/to/compatible-chat.gguf
+sudo systemctl enable --now doomsday-llama-text.service
+```
+
+Optionally, **only if you have a supported embedding GGUF**, register a small decision model on port 8082:
+
+```bash
+sudo doomsday-ai register decision /path/to/compatible-embedding.gguf
+sudo systemctl enable --now doomsday-llama-decision.service
+```
+
+If your vision-capable model requires a compatible multimodal projector:
+
+```bash
+sudo doomsday-ai register vision /path/to/vision.gguf --mmproj /path/to/mmproj.gguf
+sudo systemctl enable --now doomsday-llama-vision.service
+```
+
+If llama.cpp cannot load a model or does not expose multimodal embeddings, that role remains unavailable, and the decision router falls back to CPU-only rules. **The multimodal EmbeddingGemma 2 runtime has not yet been packaged or tested in llama.cpp**; its official Python/Sentence Transformers implementation is one possible future adapter.
+
+The decision layer chooses obvious requests immediately (article search, map, translation, image similarity). For ambiguous text, it can consult a local embedding model; for ambiguous uploaded images, it can consult a multimodal embedding server using image-to-label similarities. Only complex tasks go to generation. Hardware presets read available RAM and NVIDIA VRAM when detected, set context, offload, and low-memory q4_0 KV cache or higher-memory q8_0 KV cache. Unsupported KV/flash-attention options or non-NVIDIA devices may need manual tuning; runtime hardware support is **not** validated on every computer.
+
+### Search, Lens, translation, Maps
+
+- **Algorithmic ZIM search** opens Kiwix's archive search link without running an LLM.
+- **Local chat** uses the registered llama.cpp text model. **Grounded RAG** only works for sources already indexed as local `.txt`/`.md` excerpts; the gateway does not falsely claim that it has indexed Wikipedia's entire ZIM content. Import your own offline text folder with `sudo doomsday-index-text add /path/to/text-documents`. ZIM article-level indexing and automatic citation extraction require further engineering.
+- **Visual Lens** accepts PNG/JPEG/WEBP images. For optional classic similar-image matching on low-end computers install `python3-pil`, then explicitly enroll a folder: `sudo doomsday-image-index enroll /path/to/pictures`. Its low-priority systemd timer incrementally refreshes the fingerprint index daily, skips unchanged images and does not scan private folders or extract ZIM images without approval. Similarity is perceptual-hash matching, **not semantic picture recognition**. Vision Q&A uses the separate supported vision llama.cpp model.
+- **Translate** uses the registered text LLM. Language and factual accuracy vary by model.
+- **World Maps** links into the installed map ZIM through Kiwix. Browser geolocation is optional and permission-gated, and depends on Ubuntu/browser location capabilities; this is **not** a complete offline navigation/routing engine or automatic GPS integration.
+- **Video/audio search** via EmbeddingGemma 2 is a future pipeline, **not operational in this release**. Present UI image search does not search every image embedded in ZIM archives.
+
+### User-provided torrent (single-file ZIM only)
+
+Import a user-selected `*.torrent` with exactly one valid `*.zim` file. It requires installed `aria2c` (installed as an optional package by the installer), enough staging/archives capacity, and an **independently trusted** SHA-256 digest. The torrent's own SHA-1 piece hashes alone are not treated as a reliable publisher checksum. No tracker/peer trust is inferred. This is a deliberate, foreground import rather than an unrestricted permanent torrent server.
+
+```bash
+sudo doomsday-zims import-torrent --torrent-file /path/to/custom.zim.torrent --sha256 YOUR_64_CHARACTER_SHA256
+```
+
+Optionally `--storage secondary` if the second ZFS archive has been enrolled. A verified ZIM is published into the chosen archive dataset and protected read-only. Interrupted torrent files stay in the writable staging dataset for manual resumption. Multi-file torrents, path traversal, missing hashes, and hash mismatches are rejected; failures never overwrite the known-good archive. Custom torrents may expose your IP address to torrent peers and trackers.
+
+### Best-state recovery and new-PC hardware detection
+
+```bash
+sudo doomsday-recovery report
+sudo doomsday-recovery hardware
+sudo doomsday-recovery enroll-hardware
+```
+
+After testing a snapshot, you may **manually mark** that specific existing root snapshot as a preferred recovery candidate:
+
+```bash
+sudo doomsday-recovery mark-good --snapshot rpool/ROOT/YOUR_ROOT@YOUR_SNAPSHOT
+```
+
+`report` ranks existing snapshots and highlights the operator-marked last-known-good snapshot. `hardware` compares a locally stored **hash** of the prior computer profile to detect a move and recommends inspection of drivers, firmware and pool GUIDs. Neither function overwrites partitions or force-imports pools. Full automatic *fatal-error* rollback of the active OS and EFI is **not implemented or safe to promise** without a independently verified recovery boot image and full bare-metal restore testing. ZFS snapshots do not contain the FAT EFI partition. A last-known-good mark is an operator preference, not proof of a recoverable backup.
+
+### Storage and safety preserved
+
+The V6.5 2-drive planner, explicit single-copy opt-in, selective ZIM backups, read-only published archives, SHA-256 verification and 14-day backup services remain unchanged. The new interface cannot modify ZFS properties; the new recovery commands do not erase or roll back the OS. Nothing in this release should be considered a proven emergency recovery system until tested on spare hardware.
