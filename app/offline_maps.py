@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline raster MBTiles serving and locally prepared OSRM route adapter.
+"""Offline raster/vector MBTiles serving and locally prepared OSRM route adapter.
 
 No public geolocation, map, or routing APIs are called. An MBTiles map is NOT
 an OSRM routing graph; the user enrolls each existing dataset independently.
@@ -45,8 +45,8 @@ def validate_mbtiles(filename):
         metadata=dict(db.execute('SELECT name,value FROM metadata LIMIT 100').fetchall())
         db.execute('SELECT zoom_level,tile_column,tile_row,tile_data FROM tiles LIMIT 1').fetchone()
     fmt=metadata.get('format','').lower()
-    if fmt not in ('png','jpg','jpeg','webp'):
-        raise ValueError('Raster MBTiles only: PNG/JPEG/WEBP. Convert vector PBF with a locally installed renderer.')
+    if fmt not in ('png','jpg','jpeg','webp','pbf','mvt'):
+        raise ValueError('Supported offline MBTiles: PNG/JPEG/WEBP or OpenMapTiles PBF/MVT vector tiles.')
     return path,metadata
 
 
@@ -58,6 +58,15 @@ def enroll_tiles(filename):
     cfg['bounds']=meta.get('bounds','-180,-85,180,85')
     _write_config(cfg)
     return status()
+
+
+def enroll_terrain(filename):
+    # Only an explicitly supplied terrain-RGB raster PNG is accepted.
+    path,meta=validate_mbtiles(filename)
+    if meta.get('format','').lower()!='png':raise ValueError('Terrain-RGB elevation must be a PNG MBTiles file')
+    cfg=config()
+    cfg['terrain_tiles']=str(path);cfg['terrain_maxzoom']=int(meta.get('maxzoom','13'))
+    _write_config(cfg);return status()
 
 
 def validate_router(prefix):
@@ -72,18 +81,26 @@ def validate_router(prefix):
     return p,algo
 
 
+def enroll_walking_router(prefix):
+    p,algo=validate_router(prefix)
+    cfg=config();cfg.update({'walking_router':str(p),'walking_algorithm':algo})
+    _write_config(cfg);return status()
+
+
 def enroll_router(prefix):
     p,algo=validate_router(prefix)
     cfg=config();cfg.update({'router':str(p),'algorithm':algo})
     _write_config(cfg);return status()
 
 
-def tile(z,x,y):
+def tile(z,x,y,kind='map'):
     cfg=config()
-    if 'tiles' not in cfg:raise FileNotFoundError('No offline raster MBTiles enrolled')
+    if kind not in ('map','terrain'):raise ValueError('Unknown tile type')
+    key='terrain_tiles' if kind=='terrain' else 'tiles'
+    if key not in cfg:raise FileNotFoundError('No offline MBTiles enrolled for '+kind)
     if not all(isinstance(v,int) for v in (z,x,y)) or not 0<=z<=23 or not 0<=x<2**z or not 0<=y<2**z:
         raise ValueError('Tile coordinates out of range')
-    path,meta=validate_mbtiles(cfg['tiles'])
+    path,meta=validate_mbtiles(cfg[key])
     with _read_tiles(path) as db:
         row=db.execute('SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1',
                        (z,x,(2**z-1-y))).fetchone()
@@ -93,7 +110,9 @@ def tile(z,x,y):
     if fmt=='png' and not blob.startswith(b'\x89PNG\r\n\x1a\n'):raise ValueError('Invalid PNG tile')
     if fmt in ('jpg','jpeg') and not blob.startswith(b'\xff\xd8'):raise ValueError('Invalid JPEG tile')
     if fmt=='webp' and not (blob.startswith(b'RIFF') and blob[8:12]==b'WEBP'):raise ValueError('Invalid WEBP tile')
-    return blob,{'png':'image/png','jpg':'image/jpeg','jpeg':'image/jpeg','webp':'image/webp'}[fmt]
+    # PBF MBTiles are often gzipped. The web API sends Content-Encoding:gzip.
+    return blob,{'png':'image/png','jpg':'image/jpeg','jpeg':'image/jpeg','webp':'image/webp',
+                 'pbf':'application/x-protobuf','mvt':'application/x-protobuf'}[fmt]
 
 
 def route(lat1,lon1,lat2,lon2):
@@ -172,10 +191,15 @@ def find_places(query,db_path=PLACES,limit=15):
 def status():
     cfg=config();present=bool(cfg.get('tiles') and Path(cfg['tiles']).is_file())
     ready=bool(cfg.get('router') and Path(cfg['router']).is_file())
-    return {'tiles_ready':present,'router_data_ready':ready,'gazetteer_ready':PLACES.is_file(),'tile_name':cfg.get('name'),
+    terrain=bool(cfg.get('terrain_tiles') and Path(cfg['terrain_tiles']).is_file())
+    vector=present and cfg.get('format') in ('pbf','mvt')
+    return {'tiles_ready':present,'vector_tiles_ready':vector,'terrain_ready':terrain,'terrain_maxzoom':cfg.get('terrain_maxzoom',13),'router_data_ready':ready,
+            'walking_graph_ready':bool(cfg.get('walking_router') and Path(cfg['walking_router']).is_file()),
+            'offroad_trail_data_ready':Path(os.environ.get('DOOMSDAY_TRAIL_DB','/var/lib/doomsday-vault/offroad-trails.sqlite')).is_file(),
+            'gazetteer_ready':PLACES.is_file(),'tile_name':cfg.get('name'),
             'minzoom':cfg.get('minzoom',0),'maxzoom':cfg.get('maxzoom',18),'bounds':cfg.get('bounds'),
             'algorithm':cfg.get('algorithm'),
-            'note':'Map ZIMs and raster MBTiles do not themselves provide offline road routing. OSRM requires region-specific OSM road graph.'}
+            'note':'Map ZIMs and MBTiles render offline, but standalone road navigation requires a local routing graph. The StreetZim archive includes its own separate map and route viewer.'}
 
 
 def serve_router():
@@ -186,16 +210,29 @@ def serve_router():
     os.execvp('osrm-routed',['osrm-routed','--algorithm',algo,'--ip','127.0.0.1','--port','5000',str(path)])
 
 
+def serve_walker():
+    cfg=config();prefix=cfg.get('walking_router')
+    if not prefix:raise RuntimeError('Enroll a foot-profile OSRM .osrm graph first')
+    path,algo=validate_router(prefix)
+    os.execvp('osrm-routed',['osrm-routed','--algorithm',algo,'--ip','127.0.0.1','--port','5001',str(path)])
+
+
 def main():
-    p=argparse.ArgumentParser(description='Local raster MBTiles map + OSRM routing graph manager')
-    p.add_argument('action',choices=['tiles','router','places','find','status','route','serve-router'])
+    p=argparse.ArgumentParser(description='Local raster/vector MBTiles, OSRM and strict footpath manager')
+    p.add_argument('action',choices=['tiles','terrain','router','walk-router','offroad','places','find','status','route','serve-router','serve-walker'])
     p.add_argument('values',nargs='*')
     a=p.parse_args()
     if a.action=='tiles':result=enroll_tiles(a.values[0])
+    elif a.action=='terrain':result=enroll_terrain(a.values[0])
     elif a.action=='router':result=enroll_router(a.values[0])
+    elif a.action=='walk-router':result=enroll_walking_router(a.values[0])
+    elif a.action=='offroad':
+        from trip_planner import import_trails
+        result=import_trails(a.values[0])
     elif a.action=='places':result=import_places(a.values[0])
     elif a.action=='find':result=find_places(' '.join(a.values))
     elif a.action=='serve-router':serve_router();return
+    elif a.action=='serve-walker':serve_walker();return
     elif a.action=='route':
         if len(a.values)!=4:p.error('route LAT_FROM LON_FROM LAT_TO LON_TO')
         result=route(*map(float,a.values))
