@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Private local research library: cited PDFs, imported HTTPS pages, indexed ZIMs.
 
-No cloud search service, scraping of arbitrary LAN endpoints, OCR, or arbitrary
+No cloud search service, scraping of arbitrary LAN endpoints, or arbitrary
 local filesystem reads. Web ingestion is a single explicit HTTPS request with
 pinned public DNS and no redirects. PDF pages and source links remain auditable.
 """
@@ -81,7 +81,7 @@ def _record(conn, identifier, kind, title, url, file_path, digest, byte_size, pa
 
 
 def _pdf_pages(path):
-    """Text-first extraction; OCR intentionally disabled for safety and efficiency."""
+    """Text-first extraction with limited, local Tesseract OCR for scanned pages."""
     if shutil.which('pdftotext'):
         cmd=['pdftotext','-f','1','-l',str(MAX_PAGES),'-layout',str(path),'-']
         # A disk-backed bounded result avoids loading a large PDF's full text in RAM.
@@ -95,6 +95,33 @@ def _pdf_pages(path):
             raw=output.read().decode('utf-8',errors='replace')
         pages=raw.split('\f')[:MAX_PAGES]
         while pages and not pages[-1].strip():pages.pop()
+        # pdftotext can emit *no* form-feed for a completely scanned PDF.
+        # pdfinfo provides the authoritative page count for bounded OCR.
+        if shutil.which('pdfinfo'):
+            try:
+                meta=subprocess.run(['pdfinfo',str(path)],capture_output=True,text=True,timeout=10,check=False)
+                match=re.search(r'^Pages:\s*(\d+)\s*$',meta.stdout,re.M)
+                if meta.returncode==0 and match:
+                    count=min(int(match.group(1)),MAX_PAGES)
+                    pages=pages[:count]+['']*max(0,count-len(pages))
+            except (OSError,subprocess.TimeoutExpired):pass
+        # OCR only sparse pages, capped to 12 per import to protect RAM/CPU.
+        # Never OCR pages which already yielded meaningful extractable text.
+        if any(len(page.strip())<12 for page in pages):
+            from native_ocr import OCR_PDF_PAGES, pdf_page_text, languages
+            if languages() and shutil.which('pdftoppm'):
+                used=0
+                for i,page in enumerate(pages):
+                    if len(page.strip())>=12:continue
+                    if used>=OCR_PDF_PAGES:break
+                    used+=1
+                    try:
+                        found=pdf_page_text(path,i+1)
+                        if found.strip():pages[i]=found
+                    except (OSError,RuntimeError,ValueError):
+                        # Keep all successfully extracted pages; OCR failure
+                        # cannot corrupt the existing PDF or its database.
+                        continue
         return pages
     try:
         from pypdf import PdfReader
@@ -125,7 +152,7 @@ def import_pdf(data,filename='uploaded.pdf',root=None):
         with os.fdopen(fd,'wb') as f:f.write(data);f.flush();os.fsync(f.fileno())
         pages=_pdf_pages(tmp)
         if not any(p.strip() for p in pages):
-            raise ValueError('No searchable PDF text; scanned-image PDFs need optional OCR, not enabled')
+            raise ValueError('No searchable PDF text. Install tesseract-ocr, tesseract-ocr-eng and poppler-utils for scanned PDFs (first 12 scanned pages per import).')
         rows=[]
         for pg,content in enumerate(pages,1):
             for chunk in _chunks(content[:80_000]):
