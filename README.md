@@ -1,3 +1,28 @@
+## Adaptive local AI and translator (v7.2)
+
+**Full mode** uses an optional root-only Unix-socket model scheduler (`doomsday-model-manager.service`). It measures RAM, reserves at least 2 GiB (or 20%) for the OS, and conservatively estimates registered GGUF model memory. If text and decision models fit together, both can remain loaded. Otherwise, it loads one at a time, unloading an idle model when switching. Active inference leases prevent mid-response evictions. Optional vision loads only when needed. This is a conservative estimate, not a guarantee that a large model will run on every GPU. If the manager is unavailable, existing manually launched llama.cpp servers can be used.
+
+Register models: `sudo doomsday-ai register text /path/chat.gguf`, `sudo doomsday-ai register decision /path/embedding.gguf`, and optionally `sudo doomsday-ai register vision /path/vision.gguf --mmproj /path/mmproj.gguf`. Run `sudo doomsday-ai status` to see which models are loaded and the memory policy, or `sudo doomsday-ai auto-start` to enable the controller. Unlike the earlier separate services, these registrations **do not start three unmanaged servers simultaneously**. No GGUF weights are included or downloaded automatically.
+
+Full mode adds **Agent tools** in Local Chat: `current_time`, `find_places`, `map_coverage`, `plan_trip` (car/walk/offroad with up to 3 stops), `find_articles`, `find_documents` and `read_document`. Results are read-only and source bounded; the LLM cannot execute shell commands, open arbitrary URLs or format drives. Routes and estimated travel duration come from installed offline OSRM/trail data and explicitly exclude traffic/weather. Share GPS explicitly per trip, or enter a place or coordinates manually.
+
+**Translator** includes text translation between English, Russian, Ukrainian, and EU languages (and additional languages), via your registered text GGUF. Speech-to-text uses *separately installed* multilingual whisper.cpp (`whisper-cli`), FFmpeg and `/var/lib/doomsday-vault/models/ggml-small.bin` by default. Uploaded or recorded audio is processed locally with a strict 16 MiB / 90-second cap. `whisper.cpp` language recognition is model-dependent and not guaranteed equally accurate for all languages. Core mode hides inference and speech controls; it still supports archival search, PDF reading, maps and scripted images.
+
+## One-command setup — choose Core (no AI) or Full AI
+
+Run this **single line** in your Ubuntu terminal to download the newest installer and pick a mode:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TOPG-V/DoomsdayOS/main/scripts/quick-install.sh -o /tmp/doomsday-quick-install.sh && bash /tmp/doomsday-quick-install.sh
+```
+
+To skip the menu and install **without AI**, add `--core` to the end. To select local llama.cpp integration use `--ai` instead. The installer downloads its source from the `main` branch of `TOPG-V/DoomsdayOS` over HTTPS and asks for administrator permissions only when installation begins. Review the script before executing if your threat model requires it.
+
+* **Core (`--core`)** — ZIM downloads and SHA-256 verification, backups, read-only Kiwix library (`localhost:8080`), the offline browser workspace (`localhost:8765`) with algorithmic search, PDF/article indexing, classic image matches, and local maps. AI inference is disabled even if a local model server was previously configured. No GGUF models, llama.cpp servers or model dependencies are required.
+* **Full (`--ai`)** — everything in Core plus local llama.cpp model endpoints, chat, translation, visual inference, and RAG synthesis. **No model weights are bundled or silently downloaded.**
+
+Existing installations may switch modes with `sudo bash /opt/doomsday-firstboot/install.sh --core` or `sudo bash /opt/doomsday-firstboot/install.sh --ai`; update the installer first if the installed copy predates this feature. The selected mode survives reboots in `/etc/doomsday-vault/install-mode`. Switching to Core stops optional llama.cpp services but **does not delete model files, indexed sources, ZIMs or backups**. Re-running setup does not format disks. The first-boot ISO staging mode defaults to Core unless a mode was explicitly chosen.
+
 # Doomsday Vault First-Boot V6 — portable, offline and preservation-oriented
 
 **Status: prototype / reference implementation.** Python unit tests and shell syntax checks have passed. No actual Ubuntu Desktop ISO, ZFS import/export cycle, multi-machine boot, or real ZIM download has been tested in this environment. Do **not** consider this a proven disaster-recovery system until you have restored a complete test system onto a spare disk.
