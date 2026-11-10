@@ -119,6 +119,31 @@ $('mapSearch').addEventListener('click',()=>{const q=$('mapQ').value.trim()||'wo
 $('locate').addEventListener('click',()=>{const out=$('positionResult');if(!navigator.geolocation){out.textContent='GPS is unavailable. Set your location manually using the form below or by clicking the offline map.';return;}out.textContent='Requesting browser location permission...';navigator.geolocation.getCurrentPosition(p=>{const lat=p.coords.latitude.toFixed(5),lon=p.coords.longitude.toFixed(5);out.textContent='GPS position: '+lat+', '+lon+' (accuracy ~'+Math.round(p.coords.accuracy)+' m). Start point filled. GPS coordinates are not saved automatically.';$('mapQ').value=lat+', '+lon;$('routeStart').value=lat+', '+lon;mapState.lat=Number(lat);mapState.lon=Number(lon);mapState.z=12;if(mapState.vectorReady){mapState.vector.flyTo({center:[Number(lon),Number(lat)],zoom:12});syncVectorOverlay();}else drawMap();},e=>{out.textContent='GPS unavailable or permission denied: '+e.message+'. You can set your location manually below.';},{enableHighAccuracy:false,timeout:9000,maximumAge:60000})});
 async function hardware(){const box=clear('hardware');try{const r=await fetch('/api/status');const d=await r.json();for(const [label,v] of [['Profile',d.profile.tier],['Available RAM',d.profile.ram_free_mib+' MiB'],['Free NVIDIA VRAM',d.profile.vram_free_mib+' MiB'],['Context',d.profile.context+' tokens'],['KV cache',d.profile.kv],['Media index',d.profile.index_mode],['Model loading',d.model_residency?.policy||'unknown'],['Loaded models',(d.model_residency?.loaded||[]).join(', ')||'none'],['Active inference',(d.model_residency?.busy||[]).join(', ')||'idle']]){const card=el('div',null,'spec');card.appendChild(el('small',label));card.appendChild(el('b',v));box.appendChild(card)}$('residencyStatus').textContent='Available RAM budget: '+(d.model_residency?.usable_budget_mib??'unknown')+' MiB. Registered models: '+(d.model_residency?.registered||[]).join(', ')+'. Text + decision share memory when they fit, otherwise switch one at a time.';}catch(e){error(box,e.message)}}
 $('refreshHardware').addEventListener('click',hardware);
+async function loadHFModels(){
+  const select=$('hfModel');if(!select)return;
+  try{
+    const response=await fetch('/api/models/catalog',{cache:'no-store'});
+    if(!response.ok)throw Error('Model catalog unavailable');
+    const data=await response.json();select.replaceChildren();
+    for(const item of data.models){const opt=el('option',item.name);opt.value=item.id;select.appendChild(opt)}
+    const update=()=>{
+      const entry=data.models.find(x=>x.id===select.value);if(!entry)return;
+      const role=$('hfRole').value;
+      $('hfModelDetails').textContent=entry.description+' · '+(entry.hf_repo?('huggingface.co/'+entry.hf_repo):'Unverified source; configure manually');
+      $('hfCommand').textContent=entry.file?('sudo doomsday-ai choose '+role+' '+entry.id):'sudo doomsday-ai configure';
+    };
+    select.addEventListener('change',()=>{$('hfRole').value=data.models.find(x=>x.id===select.value).role;update()});
+    $('hfRole').addEventListener('change',update);
+    $('hfRole').value=data.models[0]?.role||'text';update();
+  }catch(ex){$('hfModelDetails').textContent=ex.message;}
+}
+$('hfCopy').addEventListener('click',async()=>{
+  const command=$('hfCommand').textContent;
+  try{await navigator.clipboard.writeText(command);$('hfCopy').textContent='Command copied';}
+  catch(_){$('hfCopy').textContent='Select the command above to copy it';}
+});
+loadHFModels();
+
 
 // DoomsdayOS offline map UI. No external maps, scripts or geocoding services.
 const mapState={lat:0,lon:0,z:2,tilesReady:false,vectorTiles:false,routerReady:false,route:null,
