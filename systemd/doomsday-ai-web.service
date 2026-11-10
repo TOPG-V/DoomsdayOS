@@ -11,7 +11,7 @@ CapabilityBoundingSet=
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-RestrictAddressFamilies=AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 MemoryMax=768M
 ReadWritePaths=/var/lib/doomsday-vault/research
 [Install]
