@@ -18,41 +18,151 @@ $('lensImage').addEventListener('change',e=>{const file=e.target.files[0];curren
 $('lensForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('lensResult');if(!currentImage){error(box,'Choose an image first.');return}const q=$('lensQ').value;try{let mode=document.querySelector('[name=lensMode]:checked').value;if(mode==='auto'){const r=await ask({action:'route',prompt:q,image:currentImage});box.appendChild(el('p','Decision: '+r.decision.route+' ('+r.decision.method+')','muted'));mode=r.decision.route==='image_search'?'image_search':'vision';}const d=await ask({action:mode==='image_search'?'image_search':'vision',prompt:q,image:currentImage});if(d.answer)box.appendChild(el('p',d.answer));displaySources(box,d);}catch(ex){error(box,ex.message)}});
 $('translateForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('translateResult');try{const d=await ask({action:'translate',prompt:$('translateText').value,language:$('targetLanguage').value});box.appendChild(el('p',d.answer));}catch(ex){error(box,ex.message)}});
 $('mapSearch').addEventListener('click',()=>{const q=$('mapQ').value.trim()||'world map';window.open('http://localhost:8080/search?pattern='+encodeURIComponent(q),'_blank','noopener,noreferrer');});
-$('locate').addEventListener('click',()=>{const out=$('positionResult');if(!navigator.geolocation){out.textContent='This browser cannot access geolocation. Enter a place manually.';return;}out.textContent='Requesting browser location permission...';navigator.geolocation.getCurrentPosition(p=>{const lat=p.coords.latitude.toFixed(5),lon=p.coords.longitude.toFixed(5);out.textContent='Local coordinates: '+lat+', '+lon+' (accuracy ~'+Math.round(p.coords.accuracy)+' m). Search manually in your map ZIM for the nearest location.';$('mapQ').value=lat+', '+lon;$('routeStart').value=lat+', '+lon;mapState.lat=Number(lat);mapState.lon=Number(lon);mapState.z=12;drawMap();},e=>{out.textContent='Location unavailable or permission denied: '+e.message;},{enableHighAccuracy:false,timeout:9000,maximumAge:60000})});
+$('locate').addEventListener('click',()=>{const out=$('positionResult');if(!navigator.geolocation){out.textContent='This browser cannot access geolocation. Enter a place manually.';return;}out.textContent='Requesting browser location permission...';navigator.geolocation.getCurrentPosition(p=>{const lat=p.coords.latitude.toFixed(5),lon=p.coords.longitude.toFixed(5);out.textContent='Local coordinates: '+lat+', '+lon+' (accuracy ~'+Math.round(p.coords.accuracy)+' m). Start point filled for offline routing.';$('mapQ').value=lat+', '+lon;$('routeStart').value=lat+', '+lon;mapState.lat=Number(lat);mapState.lon=Number(lon);mapState.z=12;if(mapState.vectorReady){mapState.vector.flyTo({center:[Number(lon),Number(lat)],zoom:12});syncVectorOverlay();}else drawMap();},e=>{out.textContent='Location unavailable or permission denied: '+e.message;},{enableHighAccuracy:false,timeout:9000,maximumAge:60000})});
 async function hardware(){const box=clear('hardware');try{const r=await fetch('/api/status');const d=await r.json();for(const [label,v] of [['Profile',d.profile.tier],['Available RAM',d.profile.ram_free_mib+' MiB'],['Free NVIDIA VRAM',d.profile.vram_free_mib+' MiB'],['Context',d.profile.context+' tokens'],['KV cache',d.profile.kv],['Media index',d.profile.index_mode]]){const card=el('div',null,'spec');card.appendChild(el('small',label));card.appendChild(el('b',v));box.appendChild(card)}}catch(e){error(box,e.message)}}
 $('refreshHardware').addEventListener('click',hardware);
 
-// Entirely offline MBTiles viewer. No third-party map scripts or remote tiles.
-const mapState={lat:0,lon:0,z:2,tilesReady:false,routerReady:false,route:null,dragging:false,pointer:null,refresh:0};
-function mercator(lat,lon,z){let n=2**z;let y=(1-Math.asinh(Math.tan(Math.max(-85.05,Math.min(85.05,lat))*Math.PI/180))/Math.PI)/2*n;return [(lon+180)/360*n,y];}
-function fromMercator(x,y,z){let n=2**z;return [Math.atan(Math.sinh(Math.PI*(1-2*y/n)))*180/Math.PI,((x/n*360+540)%360)-180];}
-function drawMap(){let canvas=$('offlineCanvas'),ctx=canvas.getContext('2d');let W=canvas.width,H=canvas.height,z=mapState.z,n=2**z;ctx.clearRect(0,0,W,H);ctx.fillStyle='#0b1722';ctx.fillRect(0,0,W,H);let [cx,cy]=mercator(mapState.lat,mapState.lon,z);let epoch=++mapState.refresh;
+// DoomsdayOS offline map UI. No external maps, scripts or geocoding services.
+const mapState={lat:0,lon:0,z:2,tilesReady:false,vectorTiles:false,routerReady:false,route:null,
+  dragging:false,pointer:null,moved:false,refresh:0,vector:null,vectorReady:false,vectorData:null};
+let stopValues=[];
+function mercator(lat,lon,z){const n=2**z;const y=(1-Math.asinh(Math.tan(Math.max(-85.05,Math.min(85.05,lat))*Math.PI/180))/Math.PI)/2*n;return [(lon+180)/360*n,y];}
+function fromMercator(x,y,z){const n=2**z;return [Math.atan(Math.sinh(Math.PI*(1-2*y/n)))*180/Math.PI,((x/n*360+540)%360)-180];}
+function pointValue(lat,lon){return Number(lat).toFixed(6)+','+Number(lon).toFixed(6)}
+function routePointIds(){return ['routeStart',...stopValues.map((_,i)=>'routeVia'+(i+1)),'routeEnd'];}
+function setRoutePoint(target,lat,lon){
+  let n=Number(String(target).replace('routeVia',''));
+  if(target.startsWith('routeVia')&&Number.isInteger(n)&&n>=1&&n<=3){while(stopValues.length<n)stopValues.push('');renderStops();}
+  if(!$(target))throw Error('Add that stop first');$(target).value=pointValue(lat,lon);
+  mapState.lat=lat;mapState.lon=lon;
+  if(mapState.vectorReady)mapState.vector.flyTo({center:[lon,lat],zoom:Math.max(mapState.vector.getZoom(),8)});
+  else {mapState.z=Math.max(8,mapState.z);drawMap()}
+}
+function renderStops(){const parent=clear('stopRows');stopValues.forEach((value,i)=>{
+  const row=el('div',null,'stop-row');
+  const lab=el('label','Stop '+(i+1));lab.htmlFor='routeVia'+(i+1);row.appendChild(lab);
+  const inp=document.createElement('input');inp.id='routeVia'+(i+1);inp.placeholder='Intermediate place or lat,lon';inp.value=value;inp.addEventListener('input',()=>stopValues[i]=inp.value);row.appendChild(inp);
+  const remove=el('button','Remove','secondary');remove.type='button';remove.addEventListener('click',()=>{stopValues.splice(i,1);renderStops()});row.appendChild(remove);parent.appendChild(row);
+});$('addStop').disabled=stopValues.length>=3;}
+$('addStop').addEventListener('click',()=>{if(stopValues.length<3){stopValues.push('');renderStops()}});
+function parsePosition(value){const match=String(value).trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+  if(!match)return null;const lat=+match[1],lon=+match[2];if(!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)throw Error('Coordinates outside latitude/longitude limits');return {lat,lon};}
+async function resolvePlace(input){const raw=input.trim();if(!raw)throw Error('Enter start, each stop, and destination');
+  const pair=parsePosition(raw);if(pair)return {...pair,name:raw};
+  if(/^(usa|us|united states|united kingdom|uk|europe|asia)$/i.test(raw))throw Error('A country or continent is not a specific destination. Choose a city, address, or map point.');
+  const response=await ask({action:'find_places',prompt:raw});const hits=response.results||[];
+  if(!hits.length)throw Error('No offline match for "'+raw+'". Import a local gazetteer, or enter lat,lon or click the map.');
+  const same=hits.filter(x=>x.name.toLowerCase()===raw.toLowerCase());const choices=same.length?same:hits;
+  if(choices.length!==1)throw Error('"'+raw+'" matches several places. Use Find offline, choose the exact result, then plan again.');
+  return {...choices[0],name:choices[0].name};}
+function routeOverlayPoints(){const result=[];for(const id of routePointIds()){
+  const v=$(id)?.value;if(!v)continue;try{const point=parsePosition(v);if(point)result.push([point.lon,point.lat]);}catch(e){/* Ignore incomplete input while drawing */}}
+ return result;}
+function drawOverlay(ctx,cx,cy){const cv=$('offlineCanvas'),W=cv.width,H=cv.height,z=mapState.z;
+ if(mapState.route?.length){ctx.save();ctx.beginPath();mapState.route.forEach(([lon,lat],i)=>{const [px,py]=mercator(lat,lon,z),x=(px-cx)*256+W/2,y=(py-cy)*256+H/2;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.strokeStyle='#80f4c4';ctx.lineWidth=5;ctx.stroke();ctx.restore()}
+ routeOverlayPoints().forEach(([lon,lat],index)=>{const [px,py]=mercator(lat,lon,z),x=(px-cx)*256+W/2,y=(py-cy)*256+H/2;
+ ctx.fillStyle=index===0?'#b4eb88':'#f0cc6d';ctx.beginPath();ctx.arc(x,y,6,0,Math.PI*2);ctx.fill();});}
+function drawMap(){if(mapState.vectorReady)return;
+ const cv=$('offlineCanvas'),ctx=cv.getContext('2d'),W=cv.width,H=cv.height,z=mapState.z,n=2**z;
+ ctx.clearRect(0,0,W,H);ctx.fillStyle='#101e28';ctx.fillRect(0,0,W,H);const [cx,cy]=mercator(mapState.lat,mapState.lon,z);const epoch=++mapState.refresh;
  const left=Math.floor(cx-W/512)-1,right=Math.ceil(cx+W/512)+1,top=Math.max(0,Math.floor(cy-H/512)-1),bottom=Math.min(n-1,Math.ceil(cy+H/512)+1);
  for(let ty=top;ty<=bottom;ty++)for(let tx=left;tx<=right;tx++){
-  let xx=(tx-cx)*256+W/2,yy=(ty-cy)*256+H/2;
-  ctx.strokeStyle='rgba(184,214,233,.14)';ctx.strokeRect(xx,yy,256,256);
-  if(!mapState.tilesReady)continue;
-  const img=new Image();img.onload=()=>{if(epoch===mapState.refresh){ctx.drawImage(img,xx,yy,256,256);drawOverlay(ctx,cx,cy);}};
+  const x=(tx-cx)*256+W/2,y=(ty-cy)*256+H/2;ctx.strokeStyle='rgba(180,214,235,.16)';ctx.strokeRect(x,y,256,256);
+  if(!mapState.tilesReady||mapState.vectorTiles)continue;
+  const img=new Image();img.onload=()=>{if(epoch===mapState.refresh){ctx.drawImage(img,x,y,256,256);drawOverlay(ctx,cx,cy)}};
   img.src='/api/maps/tiles/'+z+'/'+((tx%n+n)%n)+'/'+ty;
  }
  drawOverlay(ctx,cx,cy);
 }
-function drawOverlay(ctx,cx,cy){let cv=$('offlineCanvas'),W=cv.width,H=cv.height,z=mapState.z;
- if(mapState.route?.length){ctx.save();ctx.beginPath();mapState.route.forEach(([lon,lat],i)=>{let [px,py]=mercator(lat,lon,z),x=(px-cx)*256+W/2,y=(py-cy)*256+H/2;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);});ctx.strokeStyle='#68e2ae';ctx.lineWidth=4;ctx.stroke();ctx.restore();}
- ctx.fillStyle='#f0cf6c';ctx.beginPath();ctx.arc(W/2,H/2,4,0,Math.PI*2);ctx.fill();}
-async function mapInfo(){try{const r=await fetch('/api/maps/status');const d=await r.json();mapState.tilesReady=!!d.tiles_ready;mapState.routerReady=!!d.router_data_ready;mapState.z=Math.min(Number(d.maxzoom||18),mapState.z);$('offlineMapStatus').textContent=(d.tiles_ready?(d.tile_name||'Offline tiles ready'):'No MBTiles enrolled')+' · '+(d.router_data_ready?'road graph ready':'routing graph not installed');}catch(e){$('offlineMapStatus').textContent='Offline maps: '+e.message}drawMap();}
-$('mapZoomIn').addEventListener('click',()=>{mapState.z=Math.min(18,mapState.z+1);drawMap()});
-$('mapZoomOut').addEventListener('click',()=>{mapState.z=Math.max(0,mapState.z-1);drawMap()});
-$('offlineCanvas').addEventListener('pointerdown',e=>{e.target.setPointerCapture(e.pointerId);mapState.dragging=true;mapState.pointer=[e.offsetX,e.offsetY]});
-$('offlineCanvas').addEventListener('pointerup',()=>mapState.dragging=false);
-$('offlineCanvas').addEventListener('pointercancel',()=>mapState.dragging=false);
-$('offlineCanvas').addEventListener('pointermove',e=>{if(!mapState.dragging||!mapState.pointer)return;let a=$('offlineCanvas'),scale=a.width/a.clientWidth,[dx,dy]=[(e.offsetX-mapState.pointer[0])*scale,(e.offsetY-mapState.pointer[1])*scale];mapState.pointer=[e.offsetX,e.offsetY];let [cx,cy]=mercator(mapState.lat,mapState.lon,mapState.z);[mapState.lat,mapState.lon]=fromMercator(cx-dx/256,cy-dy/256,mapState.z);drawMap();});
+function vectorStyle(status){const minz=Math.max(0,+status.minzoom||0),maxz=Math.min(22,+status.maxzoom||14);
+ return {version:8,name:'Local offline OpenMapTiles',sources:{local:{type:'vector',tiles:[location.origin+'/api/maps/vector/{z}/{x}/{y}'],minzoom:minz,maxzoom:maxz},
+  ...(status.terrain_ready?{terrain:{type:'raster-dem',tiles:[location.origin+'/api/maps/terrain/{z}/{x}/{y}'],minzoom:0,maxzoom:+status.terrain_maxzoom||13,encoding:'mapbox'}}:{})},
+  layers:[
+   {id:'ground',type:'background',paint:{'background-color':'#1a2930'}},
+   {id:'green',type:'fill',source:'local','source-layer':'landcover',paint:{'fill-color':'#233e31','fill-opacity':.84}},
+   {id:'parks',type:'fill',source:'local','source-layer':'landuse',paint:{'fill-color':'#344d39','fill-opacity':.65}},
+   {id:'water',type:'fill',source:'local','source-layer':'water',paint:{'fill-color':'#275d75'}},
+   {id:'waterline',type:'line',source:'local','source-layer':'waterway',paint:{'line-color':'#4387a3','line-width':1.5}},
+   {id:'minor-roads',type:'line',source:'local','source-layer':'transportation',paint:{'line-color':'#9caab1','line-width':['interpolate',['linear'],['zoom'],5,.35,14,2.0]}},
+   {id:'buildings',type:'fill',source:'local','source-layer':'building',paint:{'fill-color':'#82959c','fill-opacity':.64}},
+   {id:'extruded-buildings',type:'fill-extrusion',source:'local','source-layer':'building',layout:{visibility:'none'},
+    paint:{'fill-extrusion-color':'#678b85','fill-extrusion-height':['coalesce',['to-number',['get','render_height']],['to-number',['get','height']],8],
+           'fill-extrusion-base':0,'fill-extrusion-opacity':.8}}
+  ]};}
+function routeGeoJson(){return {type:'FeatureCollection',features:[
+ ...(mapState.route?.length?[{type:'Feature',geometry:{type:'LineString',coordinates:mapState.route},properties:{kind:'route'}}]:[]),
+ ...routeOverlayPoints().map((p,i)=>({type:'Feature',geometry:{type:'Point',coordinates:p},properties:{number:i+1}}))]};}
+function syncVectorOverlay(){if(!mapState.vectorReady)return;const map=mapState.vector;if(!map.isStyleLoaded())return;const collection=routeGeoJson();
+ if(map.getSource('trip'))map.getSource('trip').setData(collection);else{
+  map.addSource('trip',{type:'geojson',data:collection});
+  map.addLayer({id:'trip-line',type:'line',source:'trip',filter:['==',['geometry-type'],'LineString'],paint:{'line-color':'#d0ed88','line-width':5}});
+  map.addLayer({id:'trip-points',type:'circle',source:'trip',filter:['==',['geometry-type'],'Point'],paint:{'circle-color':'#f0cc6d','circle-radius':7,'circle-stroke-color':'#14292a','circle-stroke-width':2}});
+ }
+}
+function focusRoute(points){if(mapState.vectorReady){const bounds=new maplibregl.LngLatBounds();points.forEach(p=>bounds.extend(p));mapState.vector.fitBounds(bounds,{padding:65,maxZoom:14});return;}
+ const lon=points.map(p=>p[0]),lat=points.map(p=>p[1]);mapState.lon=(Math.min(...lon)+Math.max(...lon))/2;mapState.lat=(Math.min(...lat)+Math.max(...lat))/2;
+ for(let z=12;z>=1;z--){const a=mercator(Math.min(...lat),Math.min(...lon),z),b=mercator(Math.max(...lat),Math.max(...lon),z);
+ if(Math.abs(a[0]-b[0])*256<720&&Math.abs(a[1]-b[1])*256<380){mapState.z=z;break}}drawMap();}
+function setupVectorMap(status){if(!window.maplibregl)return;
+ try{
+  const view=$('vectorMap');view.hidden=false;$('offlineCanvas').hidden=true;
+  const map=new maplibregl.Map({container:view,style:vectorStyle(status),center:[mapState.lon,mapState.lat],zoom:mapState.z,
+                              attributionControl:false,dragRotate:true,pitchWithRotate:true});
+  mapState.vector=map;mapState.vectorReady=true;
+  map.addControl(new maplibregl.NavigationControl({showCompass:true}),'top-right');
+  map.on('load',()=>{syncVectorOverlay();view.classList.add('ready')});
+  map.on('click',e=>{setRoutePoint($('mapTarget').value,e.lngLat.lat,e.lngLat.lng);syncVectorOverlay()});
+  if(mapState.route?.length)focusRoute(mapState.route);
+ }catch(e){mapState.vector=null;mapState.vectorReady=false;$('vectorMap').hidden=true;$('offlineCanvas').hidden=false;drawMap();$('offlineMapStatus').textContent='Vector renderer could not start: '+e.message;}
+}
+async function loadLocalMapLibre(status){
+ const css=document.createElement('link');css.rel='stylesheet';css.href='/static/vendor/maplibre-gl.css';document.head.appendChild(css);
+ const script=document.createElement('script');script.src='/static/vendor/maplibre-gl.js';script.onload=()=>setupVectorMap(status);
+ script.onerror=()=>{$('offlineMapStatus').textContent='Local MapLibre assets could not load; install them once with setup-maplibre.sh.'};document.head.appendChild(script);
+}
+async function mapInfo(){try{const r=await fetch('/api/maps/status');const status=await r.json();
+ mapState.tilesReady=!!status.tiles_ready;mapState.vectorTiles=!!status.vector_tiles_ready;
+ const names=[status.tile_name||'No local tiles',status.router_data_ready?'car graph ready':'car graph missing',status.walking_graph_ready?'walk graph ready':'walk graph missing',status.offroad_trail_data_ready?'off-road trails ready':'trails missing'];
+ if(status.vector_tiles_ready&&!status.maplibre_assets_ready)names.push('install MapLibre assets for vector view');
+ $('offlineMapStatus').textContent=names.join(' · ');mapState.z=Math.min(+status.maxzoom||18,mapState.z);
+ if(status.vector_tiles_ready&&status.maplibre_assets_ready)loadLocalMapLibre(status);
+ else drawMap();
+ }catch(e){$('offlineMapStatus').textContent='Offline maps: '+e.message;drawMap()}}
+$('mapZoomIn').addEventListener('click',()=>{if(mapState.vectorReady)mapState.vector.zoomIn();else{mapState.z=Math.min(18,mapState.z+1);drawMap()}});
+$('mapZoomOut').addEventListener('click',()=>{if(mapState.vectorReady)mapState.vector.zoomOut();else{mapState.z=Math.max(0,mapState.z-1);drawMap()}});
+$('map3D').addEventListener('click',()=>{if(mapState.vectorReady){const map=mapState.vector;const next=map.getPitch()<10;
+ map.easeTo({pitch:next?55:0,bearing:next?map.getBearing()+15:0});if(map.getLayer('extruded-buildings'))map.setLayoutProperty('extruded-buildings','visibility',next?'visible':'none');
+ if(map.getSource('terrain'))map.setTerrain(next?{source:'terrain',exaggeration:1.2}:null);
+ }else $('offlineMapStatus').textContent='3D requires installed local MapLibre assets and vector tiles containing building heights. StreetZim offers terrain in its own viewer.'});
+$('offlineCanvas').addEventListener('pointerdown',e=>{e.target.setPointerCapture(e.pointerId);mapState.dragging=true;mapState.pointer=[e.offsetX,e.offsetY];mapState.moved=false});
+$('offlineCanvas').addEventListener('pointerup',e=>{if(mapState.dragging&&!mapState.moved){const cv=$('offlineCanvas'),scale=cv.width/cv.clientWidth,
+  x=e.offsetX*scale,y=e.offsetY*(cv.height/cv.clientHeight),[cx,cy]=mercator(mapState.lat,mapState.lon,mapState.z);
+  const [lat,lon]=fromMercator(cx+(x-cv.width/2)/256,cy+(y-cv.height/2)/256,mapState.z);setRoutePoint($('mapTarget').value,lat,lon)}
+ mapState.dragging=false;mapState.pointer=null});
+$('offlineCanvas').addEventListener('pointercancel',()=>{mapState.dragging=false;mapState.pointer=null});
+$('offlineCanvas').addEventListener('pointermove',e=>{if(!mapState.dragging||!mapState.pointer)return;const cv=$('offlineCanvas'),scale=cv.width/cv.clientWidth,
+ dx=(e.offsetX-mapState.pointer[0])*scale,dy=(e.offsetY-mapState.pointer[1])*scale;mapState.pointer=[e.offsetX,e.offsetY];
+ if(Math.abs(dx)+Math.abs(dy)>1)mapState.moved=true;const [cx,cy]=mercator(mapState.lat,mapState.lon,mapState.z);
+ [mapState.lat,mapState.lon]=fromMercator(cx-dx/256,cy-dy/256,mapState.z);drawMap()});
 $('offlineCanvas').addEventListener('wheel',e=>{e.preventDefault();mapState.z=Math.max(0,Math.min(18,mapState.z+(e.deltaY<0?1:-1)));drawMap()},{passive:false});
-function coords(s){let m=String(s).trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);if(!m)throw Error('Enter decimal latitude,longitude (example: 51.1079,17.0385)');return [+m[1],+m[2]];}
-$('routeGo').addEventListener('click',async()=>{const box=clear('routeResult');try{const a=coords($('routeStart').value),b=coords($('routeEnd').value);const d=await ask({action:'route_map',coordinates:[...a,...b]});mapState.route=d.coordinates;mapState.lat=(a[0]+b[0])/2;mapState.lon=(a[1]+b[1])/2;drawMap();box.appendChild(el('p',(d.distance_m/1000).toFixed(1)+' km, about '+Math.round(d.duration_s/60)+' min (offline estimate, no live traffic).'));const steps=el('ol');(d.steps||[]).slice(0,35).forEach(s=>steps.appendChild(el('li',s.instruction+' '+s.name+' ('+s.distance_m+' m)')));box.appendChild(steps);}catch(e){error(box,e.message)}});
-mapInfo();
-
-$('offlinePlaceFind').addEventListener('click',async()=>{const box=clear('offlinePlaceResults');try{const r=await ask({action:'find_places',prompt:$('offlinePlace').value});if(!r.results.length){box.appendChild(el('p','No matching offline places. Import a local CSV gazetteer with doomsday-maps places.'));return;}r.results.forEach(p=>{const b=el('button',p.name+' ('+p.lat.toFixed(4)+', '+p.lon.toFixed(4)+')','secondary');b.type='button';b.addEventListener('click',()=>{mapState.lat=p.lat;mapState.lon=p.lon;mapState.z=11;$('routeEnd').value=p.lat.toFixed(6)+','+p.lon.toFixed(6);drawMap();});box.appendChild(b);});}catch(e){error(box,e.message)}});
+$('routeGo').addEventListener('click',async()=>{const box=clear('routeResult');box.appendChild(el('p','Finding route using installed offline networks…','muted'));
+ try{
+ const points=[];for(const id of routePointIds())points.push(await resolvePlace($(id).value));
+ const mode=$('routeMode').value;const d=await ask({action:'route_multi',points,mode});
+ if(!Array.isArray(d.coordinates)||!d.coordinates.length)throw Error('Local router returned no geometry');
+ mapState.route=d.coordinates;focusRoute(d.coordinates);syncVectorOverlay();clear('routeResult');
+ const summary=el('p',(d.distance_m/1000).toFixed(1)+' km · about '+Math.round(d.duration_s/60)+' minutes · '+(mode==='offroad'?'Trail-only, road crossings excluded where mapped':mode==='car'?'Road driving':'Walking'));
+ box.appendChild(summary);box.appendChild(el('p',d.note||'Offline estimate','muted'));
+ (d.legs||[]).forEach((leg,i)=>{box.appendChild(el('h3','Leg '+(i+1)+' · '+(leg.distance_m/1000).toFixed(1)+' km'));
+ const list=el('ol');(leg.steps||[]).slice(0,35).forEach(s=>list.appendChild(el('li',s.instruction+' '+s.name+' · '+Math.round(s.distance_m)+' m')));box.appendChild(list) });
+ }catch(e){clear('routeResult');mapState.route=null;syncVectorOverlay();drawMap();error(box,e.message)}});
+$('routeClear').addEventListener('click',()=>{mapState.route=null;stopValues=[];renderStops();$('routeStart').value='';$('routeEnd').value='';clear('routeResult');syncVectorOverlay();drawMap()});
+$('offlinePlaceFind').addEventListener('click',async()=>{const box=clear('offlinePlaceResults');try{
+ const r=await ask({action:'find_places',prompt:$('offlinePlace').value});if(!r.results.length){box.appendChild(el('p','No offline match. Import a gazetteer CSV with doomsday-maps places.'));return;}
+ r.results.forEach(p=>{const b=el('button',p.name+' · '+p.lat.toFixed(4)+', '+p.lon.toFixed(4),'secondary');b.type='button';b.addEventListener('click',()=>{
+   setRoutePoint($('mapTarget').value,p.lat,p.lon);syncVectorOverlay();});box.appendChild(b)});
+ }catch(e){error(box,e.message)}});
+renderStops();mapInfo();
 
 $('mediaSearchForm').addEventListener('submit',async e=>{e.preventDefault();const box=clear('mediaSearchResult');try{const data=await ask({action:'media_search',prompt:$('mediaSearchQ').value,kind:$('mediaKind').value});displaySources(box,data);if(!data.results.length)box.appendChild(el('p','No indexed media matched. The background ZIM index may still be incomplete.'));}catch(ex){error(box,ex.message)}});
 async function recoveryStatus(){const box=$('recoveryWatchStatus');if(!box)return;try{const r=await fetch('/api/recovery/status');const d=await r.json();box.textContent=d.recovery_plan_ready?'Recovery plan ready after '+d.incomplete_boots+' incomplete boots. Inspect: sudo doomsday-recovery-watch plan':'Recovery watcher: '+d.incomplete_boots+' previous incomplete boots. No automatic destructive rollback.';}catch(e){box.textContent='Recovery status temporarily unavailable.'}}
