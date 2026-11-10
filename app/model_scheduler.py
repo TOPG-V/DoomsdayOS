@@ -137,6 +137,16 @@ class Manager:
         with self.lock:
             return self.leases.pop(token,None) is not None
 
+    def unload(self,role):
+        """Refuse to stop an in-use model, even for a manual unload."""
+        if role not in ROLES:raise ValueError('Unsupported model role')
+        with self.lock:
+            self._prune()
+            if any(item['role']==role for item in self.leases.values()):
+                raise RuntimeError('Model is serving an active request; unload later')
+            self._stop_role(role)
+            return True
+
     def preload(self):
         # First text; decision only if both can fit. Do not prewarm optional vision.
         entries=load_config().get('models',{})
@@ -177,6 +187,7 @@ class Handler(BaseHTTPRequestHandler):
             obj=json.loads(self.rfile.read(size));path=self.path
             if path=='/acquire':result=self.server.manager.acquire(obj.get('role'))
             elif path=='/release':result={'released':self.server.manager.release(str(obj.get('token','')))}
+            elif path=='/unload':result={'unloaded':self.server.manager.unload(obj.get('role'))}
             else:return self.respond({'error':'No such endpoint'},404)
             self.respond(result)
         except (ValueError,RuntimeError,OSError) as exc:self.respond({'error':str(exc)[:350]},409)
@@ -224,7 +235,8 @@ def serve():
         threading.Thread(target=server.shutdown,daemon=True).start()
     signal.signal(signal.SIGTERM,terminate);signal.signal(signal.SIGINT,terminate)
     try:
-        manager.preload();server.serve_forever(poll_interval=0.5)
+        # Never preload models at service startup; only explicit start/inference leases.
+        server.serve_forever(poll_interval=0.5)
     finally:
         server.server_close();manager.close();SOCKET.unlink(missing_ok=True)
 
