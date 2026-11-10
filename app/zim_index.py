@@ -110,9 +110,12 @@ def _image_hashes(blob):
         with Image.open(io.BytesIO(blob)) as im:
             if im.width*im.height>30_000_000:return None,None
             gray=ImageOps.exif_transpose(im).convert('L')
-            pixels=list(gray.resize((8,8)).getdata());avg=sum(pixels)/len(pixels)
+            small=gray.resize((8,8))
+            pixels=list(small.get_flattened_data() if hasattr(small,'get_flattened_data') else small.getdata())
+            avg=sum(pixels)/len(pixels)
             ah=sum((1<<i) for i,v in enumerate(pixels) if v>=avg)
-            rows=list(gray.resize((9,8)).getdata())
+            wide=gray.resize((9,8))
+            rows=list(wide.get_flattened_data() if hasattr(wide,'get_flattened_data') else wide.getdata())
             dh=sum((1<<(y*8+x)) for y in range(8) for x in range(8)
                    if rows[y*9+x]>rows[y*9+x+1])
         return f'{ah:016x}',f'{dh:016x}'
@@ -292,7 +295,7 @@ def article_images(articles,db_path=DB,limit=9,per_article=3):
                 seen.add(key);taken+=1
                 results.append({'title':source['title'],'alt':alt or Path(image_path).name,
                                 'article_link':zim_url(zim,path),'image_url':zim_url(zim,image_path),
-                                'source':'ZIM: '+zim})
+                                'source':'ZIM: '+zim,'zim':zim,'path':image_path})
             if len(results)>=limit:break
     return results
 
