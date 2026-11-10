@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "models": [
+    {
+      "id": "spark-1.7b",
+      "name": "Spark X2.6 1.7B",
+      "role": "text",
+      "hf_repo": "bartowski/Spark-X2.6-1.7B-GGUF",
+      "file": "Spark-X2.6-1.7B-Q4_K_M.gguf",
+      "description": "Lightweight local chat and routing",
+      "verified": true
+    },
+    {
+      "id": "spark-4b",
+      "name": "Spark X2.6 4B",
+      "role": "text",
+      "hf_repo": "prithivMLmods/XHToken-Spark-X2.6-4B-GGUF",
+      "file": "Spark-X2.6-4B.Q4_K_M.gguf",
+      "description": "Midrange chat and research",
+      "verified": true
+    },
+    {
+      "id": "bonsai-27b",
+      "name": "Bonsai 27B (Q1_0)",
+      "role": "text",
+      "hf_repo": "prism-ml/Bonsai-27B-gguf",
+      "file": "Bonsai-27B-Q1_0.gguf",
+      "description": "Experimental very-low-bit quantization; verify quality and hardware compatibility",
+      "verified": true
+    },
+    {
+      "id": "qwopus-9b",
+      "name": "Qwopus 3.5 9B Coder",
+      "role": "text",
+      "hf_repo": "Jackrong/Qwopus3.5-9B-Coder-GGUF",
+      "file": "Qwopus3.5-9B-coder-Exp-Q4_K_M.gguf",
+      "mmproj": "mmproj-F32.gguf",
+      "description": "Coding/reasoning; optional vision projector",
+      "verified": true
+    },
+    {
+      "id": "lfm3-omni-2b",
+      "name": "LFM3 Omni 2B (closest verified to LFM 2.3 Omni)",
+      "role": "vision",
+      "hf_repo": "LiquidAI/LFM3-Omni-2B-GGUF",
+      "file": "LFM3-Omni-2B-Q4_K_M.gguf",
+      "description": "Vision/audio multimodal Q4; requires recent llama.cpp",
+      "verified": true,
+      "mmproj": "mmproj-LFM3-Omni-2B-Q4_K_M.gguf"
+    },
+    {
+      "id": "embeddinggemma-2",
+      "name": "EmbeddingGemma 2",
+      "role": "decision",
+      "hf_repo": "ggml-org/embeddinggemma-2-GGUF",
+      "file": "embeddinggemma-2-Q8_0.gguf",
+      "mmproj": "mmproj-embeddinggemma-2-Q8_0.gguf",
+      "description": "Semantic retrieval and multimodal decision embeddings",
+      "verified": true
+    },
+    {
+      "id": "orith-a3b",
+      "name": "Orith A3B (unverified label)",
+      "role": "text",
+      "hf_repo": null,
+      "file": null,
+      "description": "Custom Hugging Face repo and GGUF filename required; no invented download target",
+      "verified": false
+    }
+  ]
+}
