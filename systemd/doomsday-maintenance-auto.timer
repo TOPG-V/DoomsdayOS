@@ -1,0 +1,10 @@
+[Unit]
+Description=Check offline reader service health every 30 minutes
+[Timer]
+OnBootSec=15min
+OnUnitInactiveSec=30min
+RandomizedDelaySec=90
+Persistent=true
+Unit=doomsday-maintenance-auto.service
+[Install]
+WantedBy=timers.target
