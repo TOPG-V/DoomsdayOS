@@ -1,0 +1,13 @@
+[Unit]
+Description=Weekly installed-program checksum audit (no automatic repairs)
+
+[Timer]
+OnBootSec=25min
+OnCalendar=Sun *-*-* 04:45:00
+Persistent=true
+RandomizedDelaySec=75min
+AccuracySec=10min
+Unit=doomsday-runtime-integrity.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Reassert read-only ZIM protection after USB/ZFS archive reconnection
+
+[Timer]
+OnBootSec=3min
+OnCalendar=*-*-* *:05:00
+Persistent=true
+RandomizedDelaySec=6min
+AccuracySec=2min
+Unit=doomsday-zim-protect.service
+
+[Install]
+WantedBy=timers.target

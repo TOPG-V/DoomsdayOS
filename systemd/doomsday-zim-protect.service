@@ -6,6 +6,9 @@ ConditionPathExists=/etc/doomsday-vault/firstboot.json
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/archive_guard.py protect
-RemainAfterExit=yes
+RemainAfterExit=no
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=0
 [Install]
 WantedBy=multi-user.target

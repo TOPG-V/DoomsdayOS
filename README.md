@@ -606,3 +606,24 @@ See [v7.5 installation and safety guide](docs/V75_HOTSPOT_STORAGE_LENS.md). Core
 ## Portable ZIM Protector
 
 The [standalone cross-platform verification script](docs/PORTABLE_ZIM_PROTECTOR.md) is included in `scripts/portable_zim_protector.py`, and installed as `doomsday-zim-portable`. It checks ZIM files against a supplied SHA-256 manifest, reports exact Linux ZFS mount health, and can reassert an archive dataset's `readonly=on` **only with explicit approval and successful verification**. It never imports a pool, formats a drive, starts downloads, or restores corrupted files automatically. Use the existing `archive_guard.py` and `zim_manager.py` for the normal verified publishing/download pipeline.
+
+
+## Verified self-installation, autostart integrity and Wayland (November 2026)
+
+This version first copies the full source package to `/opt/doomsday-firstboot`
+using a private staging directory and SHA-256 comparisons. Successful setup
+removes only temporary staging and rollback directories created by the installer;
+manual source folders and existing ZIMs are never deleted. If setup fails,
+previous program files are restored where possible. User data remains in
+`/var/lib/doomsday-vault`, and the web UI now stores generated ZimLens content
+in `/var/lib/doomsday-vault/zimlens` instead of a hidden home directory.
+
+The existing service/timer schedule is retained, with a new weekly installed-program
+integrity audit and an hourly recheck of read-only ZFS datasets after USB/port
+reconnection. The guard never silently mounts an unknown disk, and unverified
+archives do not become trusted just because a directory exists.
+
+For supported Ubuntu GNOME PCs, `--desktop` explicitly opts into portal,
+PipeWire and WirePlumber packages; the unprivileged `doomsday-desktop-check`
+command inspects Wayland user services. GNOME screen/control approval is still
+required. See [complete setup and safety notes](docs/INSTALL_AUTOSTART_WAYLAND.md).
