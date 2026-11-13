@@ -627,3 +627,25 @@ For supported Ubuntu GNOME PCs, `--desktop` explicitly opts into portal,
 PipeWire and WirePlumber packages; the unprivileged `doomsday-desktop-check`
 command inspects Wayland user services. GNOME screen/control approval is still
 required. See [complete setup and safety notes](docs/INSTALL_AUTOSTART_WAYLAND.md).
+
+## Smart disk backup planning and PC portability (November 2026)
+
+Run `sudo doomsday-smart-backup plan` to inspect local OS snapshots, actual
+independent ZFS backup destinations, physical-disk independence and available
+capacity (including space reserves). Existing ZFS system replication, recovery,
+verified ZIM copies and their timers are retained. The new smart copier saves
+selected ZimLens/research/settings files into root-private, checksum-verified
+generations **only on previously enrolled external ZFS datasets**; it never
+formats, force-imports or guesses an unknown drive.
+
+`sudo doomsday-smart-backup verify` checks completed generations. Restoration
+of an individual file is explicit; optional missing-file auto-healing is off
+by default, limited to ZimLens workspace data, and never overwrites existing
+files. Automatic live OS/EFI rollback is not supported.
+
+`doomsday-portable-os report` checks boot/EFI mounts, stable filesystem
+references, driver availability and storage portability. `prepare` records a
+root-private inventory without rewriting boot settings. Read the complete
+[smart storage and recovery guide](docs/SMART_DISK_BACKUPS.md).
+
+Settings → Backups & recovery also displays a read-only capacity report.
