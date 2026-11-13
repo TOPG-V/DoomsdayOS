@@ -7,7 +7,7 @@
     ['Workspace', [['general','General'],['appearance','Appearance'],['system','System stats']]],
     ['Account & privacy', [['profile','Local profile'],['privacy','Data & privacy']]],
     ['AI & models', [['context','Context management'],['inference','Inference settings']]],
-    ['Library & storage', [['library','Library'],['storage','Storage & archives'],['indexing','Indexing']]],
+    ['Library & storage', [['library','Library'],['storage','Storage & archives'],['backups','Backups & recovery'],['indexing','Indexing']]],
     ['Extensions', [['themes','Custom themes'],['mcp','MCP servers'],['skills','Skills'],['projects','Projects'],['sandbox','Sandbox OS']]],
   ];
   const defaultPrefs = {theme:'dark',reduced_motion:true,compact_navigation:false,resume_last_page:true,confirm_actions:true,auto_compact:true,compact_free_percent:15};
@@ -84,6 +84,7 @@
       if (jump && typeof go === 'function') go(jump.dataset.zlJump);
       if (event.target.closest('#zl-compact-now')) compactNow();
       if (event.target.closest('#zl-new-context')) newChatSession();
+      if (event.target.closest('#zl-refresh-backup')) refreshBackups();
     });
     page.addEventListener('change',event => {
       const inp = event.target;
@@ -133,6 +134,35 @@
       <button class="secondary" type="button" id="zl-new-context">New conversation</button></div>
       <span id="zl-context-result" class="zl-status-text" role="status"></span>`);
   }
+  function backupCard() {
+    return card('Disk-aware backups','This report is read-only. The service can copy selected folders only to an already enrolled independent ZFS disk.',
+      `<div class="zl-option"><div><strong>Backup capacity and recovery</strong><small>Includes local OS recovery, independent external space, and integrity status.</small></div>
+      <button type="button" class="secondary" id="zl-refresh-backup">Refresh</button></div>
+      <div id="zl-backup-summary" class="zl-backup-summary" role="status" aria-live="polite">Checking enrolled disks and selected folders…</div>
+      <p class="zl-note">For detailed verification and a restore plan, use: sudo doomsday-smart-backup status. Full OS rollback always requires separate recovery media and approval.</p>`);
+  }
+  async function refreshBackups() {
+    const box=$('zl-backup-summary');
+    if (!box)return;
+    box.textContent='Checking pool identities and free space…';
+    try {
+      const p=await api('/api/zimlens/backup-plan');
+      const os=p.local_system || {},cap=p.system_capacity||{},est=p.estimate||{};
+      const lines=[
+        'Detected drives: '+(p.connected_disks?.length??0),
+        'OS pool: '+(os.root_pool||'not ZFS')+' · system snapshots: '+(os.snapshots??0),
+        'Local recovery success marker: '+(os.local_job_success_marker?'present (restore not proven)':'not recorded'),
+        'External system ZFS snapshots: '+(os.external_system_snapshots??0),
+        'OS free: '+fmt(cap.free_bytes)+' · local safety reserve: '+fmt(cap.local_safe_reserve_bytes),
+        'Full system replica estimate: '+fmt(cap.full_stream_upper_bound_bytes),
+        'Selected data to back up: '+fmt(est.bytes)+' across '+(est.files??0)+' files',
+        p.recommended?'Selected independent destination: '+p.recommended.dataset+' ('+fmt(p.recommended.capacity_bytes)+' after reserve)':'No eligible independent destination: copy will be deferred',
+      ];
+      for (const d of p.destinations||[]) lines.push((d.eligible?'Ready':'Unavailable')+': '+d.dataset+' — '+d.reason);
+      if(est.warnings?.length)lines.push(...est.warnings.map(x=>'Source warning: '+x));
+      box.textContent=lines.join('\n');
+    } catch(e) {box.textContent='Backup plan unavailable: '+e.message;}
+  }
   function themeCard() {
     return card('Appearance','Choose a comfortable theme. No neon colors or decorative effects.',
       `<div class="zl-theme-choice">${['light','dark','system'].map(n=>`<button type="button" data-zl-theme="${n}" aria-pressed="${prefs.theme===n}">${n[0].toUpperCase()+n.slice(1)}</button>`).join('')}</div>
@@ -161,6 +191,7 @@
       case 'inference':title='Inference settings';description='Local model configuration and hardware controls.';content=card('AI & hardware','Use the existing model manager and hardware view.',navButton('models','Open model settings'));break;
       case 'library':title='Offline library';description='Browse local ZIM content.';content=card('Kiwix library','Read original ZIM archives using your local Kiwix server.','<a class="secondary" href="http://localhost:8080/" target="_blank" rel="noopener noreferrer">Open Kiwix</a>');break;
       case 'storage':title='Storage & archives';description='Downloads, verification, and archive inventory.';content=card('ZIM download manager','Access the existing integrity-checked archive download queue.',navButton('downloads','Open downloads'));break;
+      case 'backups':title='Backups & recovery';description='Plan verified local and independent-disk recovery copies.';content=backupCard();break;
       case 'indexing':title='Indexing';description='Check local article indexing and search.';content=card('Index and search','Use the existing indexed source tools and status.',navButton('search','Open search'));break;
       case 'themes':title='Custom themes';description='Build, save, edit and use your own non-neon themes.';content='<div id="zl-extensions"></div>';break;
       case 'mcp':title='MCP servers';description='Register and validate server definitions with explicit approval.';content='<div id="zl-extensions"></div>';break;
@@ -171,7 +202,7 @@
     target.innerHTML=`<h2 class="zl-settings-section-title">${title}</h2><p class="zl-settings-help">${description}</p>${content}`;
     window.zlSettingsCategory=selected;
     if (['themes','mcp','skills','projects','sandbox'].includes(selected))window.ZimLensExtras?.render(selected);
-    refreshStats(); refreshContext();
+    refreshStats(); refreshContext();if(selected==='backups')refreshBackups();
   }
   async function saveSetting(key,value) {
     try {await updatePref(key,value);renderSettings();}
