@@ -18,7 +18,7 @@ ROOT = Path('/opt/doomsday-firstboot')
 MANIFEST = Path('/var/lib/doomsday-vault/installation-manifest.json')
 DIRS = ('app', 'scripts', 'systemd', 'vendor', 'docs', 'iso', 'tests')
 TOP = ('install.sh', 'build-iso.sh', 'README.md', 'README_ZIMLENS_VNEXT.md',
-       'LICENSE', 'apply_integration.py')
+       'LICENSE', 'apply_integration.py', 'README_PORTABLE_ZIM_PROTECTOR.md')
 SKIP = {'__pycache__', '.git', '.venv', '.pytest_cache', '.mypy_cache', 'node_modules'}
 
 
@@ -42,7 +42,12 @@ def enumerate_programs(root: Path) -> dict[str, str]:
             raise ValueError('Unexpected symlink: ' + str(path))
         paths = path.rglob('*') if path.is_dir() else [path]
         for candidate in paths:
-            if any(part in SKIP for part in candidate.relative_to(root).parts):
+            relative = candidate.relative_to(root)
+            if any(part in SKIP for part in relative.parts):
+                continue
+            # Optional locally installed MapLibre assets are allowed to evolve
+            # independently, and are not a source-file tampering signal.
+            if relative.parts[:3] == ('app', 'web', 'vendor'):
                 continue
             if candidate.is_symlink():
                 raise ValueError('Unexpected symlink: ' + str(candidate))
