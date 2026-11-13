@@ -10,7 +10,7 @@ from pathlib import Path
 
 STATE = Path(os.environ.get('DOOMSDAY_STATE_DIR', '/var/lib/doomsday-vault'))
 CONFIG = Path(os.environ.get('DOOMSDAY_BACKUP_POLICY','/etc/doomsday-vault/backup-policy.json'))
-KINDS = ('local','external','zim-verify','zim-copy')
+KINDS = ('local','external','zim-verify','zim-copy','smart-copy')
 DEFAULTS = {'interval_days': 14, 'max_load_per_core': 1.5, 'stream_mib_per_second': 16,
             'min_system_free_gib': 20, 'min_backup_free_gib': 5, 'keep_local_editions': 2,
             'zim_backups': 'selected', 'selected_zims': []}
