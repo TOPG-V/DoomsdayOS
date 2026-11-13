@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" aria-label="ZimLens" role="img">
+  <path d="M6 12c7-3 12-2 17 1v24c-5-3-11-4-17-1V12Z" stroke="#ebece6" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M23 13c5-3 11-4 17-1v15M23 37c3-2 6-3 9-3" stroke="#ebece6" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="35" cy="34" r="7" fill="none" stroke="#ebece6" stroke-width="2.6"/>
+  <path d="m40 39 5 5" stroke="#ebece6" stroke-width="2.7" stroke-linecap="round"/>
+</svg>
