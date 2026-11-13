@@ -31,22 +31,26 @@ roll back previously completed operating-system package/service operations.
 Runtime state stays in `/var/lib/doomsday-vault` and configuration in
 `/etc/doomsday-vault`.
 
-The manually downloaded source folder is deliberately left alone. Never treat a
+An existing optional offline MapLibre vendor folder is preserved across
+verified code upgrades. The manually downloaded source folder is deliberately left alone. Never treat a
 second copy in the same ZFS pool as an independent physical-disk backup.
 
 ## Services and timers
 
 The installer enables the existing local Kiwix and web workspace services, boot
-ZIM read-only protection and verified-download restart queue. Existing archive
+ZIM read-only protection, an hourly USB reconnection guard and verified-download restart queue. Existing archive
 SHA-256 verification is eligible every 14 days (the timer checks daily and
 `backup_policy.py` prevents premature audits), backups are similarly checked for
 eligibility, and the added **installed-program integrity** timer runs weekly.
-All integrity checks avoid self-repair or deletion of corrupted files.
+All integrity checks avoid self-repair or deletion of corrupted files. When a
+portable USB/ZFS archive is disconnected, the ZIM protector reports that the
+library is unavailable; it does not remount an unknown filesystem or write to
+an alternative path. The hourly check reasserts read-only after reconnection.
 
 ```bash
 systemctl list-timers --all 'doomsday-*'
 systemctl status doomsday-ai-web.service doomsday-kiwix.service --no-pager
-systemctl status doomsday-zim-protect.service --no-pager
+systemctl status doomsday-zim-protect.service doomsday-zim-protect.timer --no-pager
 sudo doomsday-zim-portable status --archive /tank/zims
 sudo python3 /opt/doomsday-firstboot/scripts/runtime_integrity.py verify
 journalctl -u doomsday-runtime-integrity.service -n 80 --no-pager
