@@ -1,0 +1,11 @@
+[Unit]
+Description=Check 14-day smart backup eligibility once daily after startup
+[Timer]
+OnBootSec=40min
+OnCalendar=*-*-* 04:45:00
+Persistent=true
+RandomizedDelaySec=45min
+AccuracySec=5min
+Unit=doomsday-smart-backup.service
+[Install]
+WantedBy=timers.target

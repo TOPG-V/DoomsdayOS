@@ -114,11 +114,19 @@ if command -v apt-get >/dev/null; then apt-get install -y --no-install-recommend
 if [[ $desktop == true && -x $(command -v apt-get || true) ]]; then
   apt-get install -y --no-install-recommends xdg-desktop-portal xdg-desktop-portal-gnome pipewire wireplumber || echo 'Some Wayland portal packages were unavailable; run doomsday-desktop-check inside GNOME.' >&2
 fi
-for f in systemd/doomsday-semantic-index.* systemd/doomsday-always-on.service systemd/doomsday-hotspot-portal.service systemd/doomsday-maintenance-auto.* systemd/doomsday-zim-index.* systemd/doomsday-recovery-watch-*.service systemd/doomsday-recovery-watch-*.timer systemd/doomsday-osrm.service systemd/doomsday-osrm-walk.service systemd/doomsday-ai-web.service systemd/doomsday-image-index.* systemd/doomsday-zim-download.* systemd/doomsday-hardware-recheck.* systemd/doomsday-kiwix.service systemd/doomsday-zim-protect.service systemd/doomsday-zim-protect.timer systemd/doomsday-zim-verify.service systemd/doomsday-zim-verify.timer systemd/doomsday-stream-replica.service systemd/doomsday-stream-replica.timer systemd/doomsday-runtime-integrity.service systemd/doomsday-runtime-integrity.timer; do install -m 0644 "$f" /etc/systemd/system/; done
+for f in systemd/doomsday-semantic-index.* systemd/doomsday-always-on.service systemd/doomsday-hotspot-portal.service systemd/doomsday-maintenance-auto.* systemd/doomsday-zim-index.* systemd/doomsday-recovery-watch-*.service systemd/doomsday-recovery-watch-*.timer systemd/doomsday-osrm.service systemd/doomsday-osrm-walk.service systemd/doomsday-ai-web.service systemd/doomsday-image-index.* systemd/doomsday-zim-download.* systemd/doomsday-hardware-recheck.* systemd/doomsday-kiwix.service systemd/doomsday-zim-protect.service systemd/doomsday-zim-protect.timer systemd/doomsday-zim-verify.service systemd/doomsday-zim-verify.timer systemd/doomsday-stream-replica.service systemd/doomsday-stream-replica.timer systemd/doomsday-runtime-integrity.service systemd/doomsday-runtime-integrity.timer systemd/doomsday-smart-backup.service systemd/doomsday-smart-backup.timer systemd/doomsday-smart-backup-verify.service systemd/doomsday-smart-backup-verify.timer; do install -m 0644 "$f" /etc/systemd/system/; done
 # Fortnightly backup policy: preserve admin overrides and use systemd low-I/O priority.
 if [[ ! -f /etc/doomsday-vault/backup-policy.json ]]; then
   install -m 0600 /dev/null /etc/doomsday-vault/backup-policy.json
   printf '%s\n' '{"interval_days":14,"stream_mib_per_second":16,"max_load_per_core":1.5,"min_system_free_gib":20,"zim_backups":"selected"}' > /etc/doomsday-vault/backup-policy.json
+fi
+# Preserve administrator-selected data sources and allowlisted backup policies
+# across upgrades; create the initial conservative policy only once.
+if [[ ! -e /etc/doomsday-vault/smart-backup.json ]]; then
+  cat > /etc/doomsday-vault/smart-backup.json <<'POLICY'
+{"enabled":true,"sources":["/var/lib/doomsday-vault/zimlens","/var/lib/doomsday-vault/research","/etc/doomsday-vault"],"interval_days":14,"os_reserve_gib":20,"external_reserve_gib":5,"minimum_external_free_percent":10,"max_source_gib":50,"max_files":100000,"keep_generations":3,"auto_restore_missing":false}
+POLICY
+  chmod 0600 /etc/doomsday-vault/smart-backup.json
 fi
 install -d -m 0755 /etc/systemd/system/doomsday-backup.service.d
 install -m 0644 systemd/doomsday-backup-policy.conf /etc/systemd/system/doomsday-backup.service.d/policy.conf
@@ -148,6 +156,16 @@ cat > /usr/local/bin/doomsday-setup <<'LAUNCH'
 cd /opt/doomsday-firstboot/app
 exec /usr/bin/python3 firstboot.py
 LAUNCH
+cat > /usr/local/bin/doomsday-smart-backup <<'LAUNCH'
+#!/bin/sh
+cd /opt/doomsday-firstboot/app
+exec /usr/bin/python3 smart_backup.py "$@"
+LAUNCH
+cat > /usr/local/bin/doomsday-portable-os <<'LAUNCH'
+#!/bin/sh
+exec /usr/bin/python3 /opt/doomsday-firstboot/scripts/portable_os.py "$@"
+LAUNCH
+chmod 0755 /usr/local/bin/doomsday-smart-backup /usr/local/bin/doomsday-portable-os
 cat > /usr/local/bin/doomsday-zims <<'LAUNCH'
 #!/bin/sh
 cd /opt/doomsday-firstboot/app
@@ -264,7 +282,7 @@ fi
 if command -v zfs >/dev/null && zfs list -H tank/zims >/dev/null 2>&1; then
   if systemctl list-unit-files 'zfs-scrub-monthly@.timer' --no-legend 2>/dev/null | grep -q 'zfs-scrub-monthly@.timer'; then systemctl enable --now zfs-scrub-monthly@tank.timer || true; fi
 fi
-systemctl enable --now doomsday-maintenance-auto.timer doomsday-backup.timer doomsday-zim-download.timer doomsday-hardware-recheck.timer doomsday-zim-verify.timer doomsday-stream-replica.timer doomsday-zim-protect.timer doomsday-zim-protect.service doomsday-kiwix.service doomsday-ai-web.service doomsday-image-index.timer doomsday-zim-index.timer doomsday-recovery-watch-start.timer doomsday-recovery-watch-healthy.timer
+systemctl enable --now doomsday-maintenance-auto.timer doomsday-backup.timer doomsday-zim-download.timer doomsday-hardware-recheck.timer doomsday-zim-verify.timer doomsday-stream-replica.timer doomsday-smart-backup.timer doomsday-smart-backup-verify.timer doomsday-zim-protect.timer doomsday-zim-protect.service doomsday-kiwix.service doomsday-ai-web.service doomsday-image-index.timer doomsday-zim-index.timer doomsday-recovery-watch-start.timer doomsday-recovery-watch-healthy.timer
 # An upgrade must reload the new web server code; enabling an already active
 # service by itself would continue running the old Python process.
 systemctl try-restart doomsday-ai-web.service doomsday-kiwix.service
@@ -297,6 +315,10 @@ echo 'Drive backup enrollment: sudo /usr/local/lib/doomsday-vault/enroll-externa
 echo 'Safe portability report: sudo /opt/doomsday-firstboot/scripts/portability-report.sh'
 echo 'Wayland/GNOME desktop doctor (no sudo): doomsday-desktop-check --json'
 echo 'Installed-code integrity: sudo /usr/bin/python3 /opt/doomsday-firstboot/scripts/runtime_integrity.py verify'
+echo 'Smart disk/space backup plan: sudo doomsday-smart-backup plan'
+echo 'Verified selected-file backup: sudo doomsday-smart-backup run'
+echo 'Portability/boot report: doomsday-portable-os report'
+echo 'Portable recovery inventory: sudo doomsday-portable-os prepare'
 echo 'External direct-stream backup: sudo systemctl start doomsday-stream-replica.service'
 echo 'Backup scheduling: local and external backups become eligible every 14 days, and run at idle I/O priority'
 

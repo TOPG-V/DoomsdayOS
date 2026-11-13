@@ -1,0 +1,15 @@
+[Unit]
+Description=Verify and copy selected Doomsday data to an enrolled independent ZFS dataset
+After=local-fs.target zfs-mount.service
+ConditionPathExists=/opt/doomsday-firstboot/app/smart_backup.py
+[Service]
+Type=oneshot
+ExecCondition=/usr/bin/python3 /opt/doomsday-firstboot/app/backup_policy.py check smart-copy
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/smart_backup.py run
+Nice=19
+IOSchedulingClass=idle
+IOSchedulingPriority=7
+CPUWeight=30
+IOWeight=20
+TimeoutStartSec=0
+NoNewPrivileges=false

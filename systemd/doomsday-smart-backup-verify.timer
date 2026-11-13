@@ -1,0 +1,11 @@
+[Unit]
+Description=Verify archived Doomsday data copies weekly during idle hours
+[Timer]
+OnBootSec=4h
+OnCalendar=Sun *-*-* 05:30:00
+Persistent=true
+RandomizedDelaySec=1h
+AccuracySec=10min
+Unit=doomsday-smart-backup-verify.service
+[Install]
+WantedBy=timers.target

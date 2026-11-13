@@ -11,8 +11,12 @@ jobs:
       - name: Shell syntax
         run: bash -n install.sh scripts/quick-install.sh app/doomsday-firstboot-launch
       - name: Python syntax
-        run: python3 -m py_compile scripts/deploy_atomic.py scripts/runtime_integrity.py scripts/wayland_doctor.py app/archive_guard.py
+        run: python3 -m py_compile scripts/deploy_atomic.py scripts/runtime_integrity.py scripts/wayland_doctor.py app/archive_guard.py app/smart_backup.py scripts/portable_os.py
       - name: Isolated installer and integrity tests
         run: python3 -m unittest discover -s tests -p test_self_install.py -v
       - name: Existing ZFS guard tests (mocked)
         run: python3 -m unittest discover -s tests -p test_archive_guard.py -v
+      - name: Smart storage, verified copy and OS portability tests
+        run: python3 -m unittest discover -s tests -p test_smart_backup.py -v
+      - name: ZimLens settings JavaScript syntax
+        run: node --check app/web/zimlens.js

@@ -16,6 +16,9 @@ def budget(profile):
 def get(path,query,profile):
     if path=='/api/zimlens/preferences':return preferences()
     if path=='/api/zimlens/system-stats':return system_stats()
+    if path=='/api/zimlens/backup-plan':
+        from smart_backup import plan
+        return plan()
     if path=='/api/zimlens/context':
         sid=validate_session(urllib.parse.parse_qs(query).get('session_id',[''])[0])
         return CONTEXT.status(sid,*budget(profile))
