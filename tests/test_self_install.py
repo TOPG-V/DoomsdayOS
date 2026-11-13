@@ -42,6 +42,16 @@ class InstallSafety(unittest.TestCase):
             self.assertFalse(any(root.glob('.doomsday-rollback-*')))
             self.assertFalse(any(root.glob('.doomsday-stage-*')))
 
+    def test_update_preserves_optional_offline_maplibre_assets(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); old=root/'installed';old.mkdir();fake_release(old)
+            vendor=old/'app'/'web'/'vendor';vendor.mkdir(parents=True)
+            (vendor/'maplibre-gl.js').write_text('offline maps')
+            src=root/'updated';src.mkdir();fake_release(src,'new')
+            token=DEPLOY.stage(src,old)
+            self.assertEqual((old/'app'/'web'/'vendor'/'maplibre-gl.js').read_text(), 'offline maps')
+            DEPLOY.complete(old,token)
+
     def test_failed_update_rolls_back_existing_code(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d);old = root / 'installed';old.mkdir();fake_release(old)
