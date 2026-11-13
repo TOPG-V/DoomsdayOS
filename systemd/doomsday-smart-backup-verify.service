@@ -1,0 +1,12 @@
+[Unit]
+Description=Read-only SHA-256 verification of independent Doomsday data backups
+After=local-fs.target zfs-mount.service
+ConditionPathExists=/opt/doomsday-firstboot/app/smart_backup.py
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/app/smart_backup.py verify
+Nice=19
+IOSchedulingClass=idle
+CPUWeight=20
+IOWeight=10
+TimeoutStartSec=0
