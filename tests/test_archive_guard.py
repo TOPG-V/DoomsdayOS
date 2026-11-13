@@ -38,6 +38,27 @@ class ArchiveGuardTests(unittest.TestCase):
                 self.assertEqual(out.read_bytes(),b'archive bytes')
                 self.assertEqual(operations,[False,True])
                 record.assert_called_once()
+    def test_absent_usb_archive_defers_without_writing_other_mounts(self):
+        from contextlib import nullcontext
+        with patch.object(ag,'current_config',return_value={'immutable_zims':True}), \
+             patch('dual_storage.locations',return_value=[{'key':'secondary'}]), \
+             patch('dual_storage.archive_config',return_value={'zim_dir':'/tank/zims','zim_dataset':'tank/zims'}), \
+             patch.object(ag,'archive_lock',return_value=nullcontext()), \
+             patch.object(ag,'checked_archive',side_effect=RuntimeError('Dedicated ZIM ZFS dataset missing; refusing to alter other filesystems')), \
+             patch.object(ag,'set_ro') as ro:
+            self.assertIn('deferred',ag.protect().lower())
+            ro.assert_not_called()
+
+    def test_unsafe_root_dataset_never_becomes_a_soft_warning(self):
+        from contextlib import nullcontext
+        with patch.object(ag,'current_config',return_value={'immutable_zims':True}), \
+             patch('dual_storage.locations',return_value=[{'key':'primary'}]), \
+             patch('dual_storage.archive_config',return_value={'zim_dir':'/','zim_dataset':'rpool/ROOT/os'}), \
+             patch.object(ag,'archive_lock',return_value=nullcontext()), \
+             patch.object(ag,'checked_archive',side_effect=RuntimeError('Refusing read-only on a pool root or system dataset')):
+            with self.assertRaisesRegex(RuntimeError,'Refusing read-only'):
+                ag.protect()
+
     def test_safe_url_rejects_private_network(self):
         with self.assertRaises(ValueError):zm.safe_url('http://localhost/example.zim')
     def test_copies_peak_estimation(self):
