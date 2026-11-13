@@ -114,6 +114,29 @@ class SmartBackupTests(unittest.TestCase):
                 self.assertTrue(sb._verify_generation(generation)['valid'])
                 self.assertTrue((state/'smart-backup.lock').exists())
 
+    def test_legacy_destination_requires_explicit_guid_approval(self):
+        row={'key':'legacy','dataset':'tank/backup','mount':'/tank/backup'}
+        with patch.object(sb,'_enrolled',return_value=[row]),patch.object(sb,'_mount_identity',return_value=True):
+            out=sb.destinations(root='rpool',policy=sb.DEFAULTS)
+        self.assertFalse(out[0]['eligible'])
+        self.assertIn('pinned pool GUID',out[0]['reason'])
+
+    def test_pinning_existing_enrolled_pool_requires_confirmation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            policy=Path(tmp)/'smart-policy.json'
+            policy.write_text('{}')
+            row={'key':'approved','dataset':'tank/backup','mount':'/tank/backup'}
+            with patch.object(sb,'POLICY',policy),patch.object(sb,'_enrolled',return_value=[row]), \
+                 patch.object(sb,'_mount_identity',return_value=True), \
+                 patch.object(sb,'_zpool_members',side_effect=[{'/dev/sda'},{'/dev/sdb'}]), \
+                 patch.object(sb,'root_pool',return_value='rpool'),patch.object(sb,'_guid',return_value='123'), \
+                 patch.object(sb,'_cmd_ok',return_value='off'),patch('os.geteuid',return_value=0):
+                with self.assertRaises(ValueError):sb.approve_destination('tank/backup','wrong')
+                result=sb.approve_destination('tank/backup','TRUST tank/backup')
+            self.assertEqual(result['pool_guid'],'123')
+            saved=json.loads(policy.read_text())
+            self.assertEqual(saved['trusted_destinations'][0]['guid'],'123')
+
     def test_unenrolled_pool_cannot_be_used_for_automatic_backup(self):
         with patch.object(sb,'_enrolled',return_value=[]):
             self.assertEqual(sb.destinations(root='rpool',policy=sb.DEFAULTS),[])
