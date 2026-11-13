@@ -84,6 +84,12 @@ def enroll_existing(pool,input_fn=input,write=True):
     if input_fn('Type ENROLL '+pool+' to create child datasets: ').strip()!='ENROLL '+pool:
         return None
     if not write:return entry
+    # Pin the imported pool GUID at the time of explicit enrollment. Names
+    # and /dev/sdX numbers can be reused after a USB drive is replaced.
+    pool_guid=call('zpool','get','-H','-o','value','guid',pool)
+    if not re.fullmatch(r'\d+',pool_guid):
+        raise RuntimeError('Cannot verify enrolled ZFS pool GUID')
+    entry['pool_guid']=pool_guid
     for kind in ('zim','staging','backup'):
         ds=entry[('zim' if kind=='zim' else kind)+'_dataset'];mp=entry[('zim' if kind=='zim' else kind)+'_dir']
         call('zfs','create','-o','mountpoint='+mp,'-o','atime=off','-o','compression=lz4','-o','copies=1',ds)
