@@ -89,11 +89,24 @@ def protect():
     if not cfg.get('immutable_zims'): return 'Archive protection not configured (run wizard)'
     from dual_storage import locations, archive_config
     protected=[]
+    unavailable=[]
+    # USB ZFS pools can be temporarily absent. Never guess a replacement
+    # mount or make the OS pool readonly; only guard exact enrolled datasets.
     with archive_lock():
         for loc in locations(cfg):
-            _,ds=checked_archive(archive_config(cfg,loc['key']))
+            try:
+                _,ds=checked_archive(archive_config(cfg,loc['key']))
+            except RuntimeError as exc:
+                if not str(exc).startswith('Dedicated ZIM ZFS dataset missing'):
+                    raise  # Unsafe root/system dataset mistakes remain fatal.
+                unavailable.append(str(loc['key']))
+                continue
             set_ro(ds,True)
             protected.append(ds)
+    if unavailable:
+        print('Unavailable ZIM datasets (no fallback): '+', '.join(unavailable),file=sys.stderr)
+    if not protected:
+        return 'Archive protection deferred: no enrolled archive dataset is mounted; no writes allowed'
     return 'Verified archive datasets now read-only: '+', '.join(protected)
 
 
