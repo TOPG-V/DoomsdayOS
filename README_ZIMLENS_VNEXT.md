@@ -43,3 +43,16 @@ node --check app/web/zimlens.js
 node --check app/web/zimlens-extras.js
 python3 -m py_compile app/zimlens_workspace.py app/zimlens_extensions.py app/zimlens_api.py app/ai_gateway.py
 ```
+
+## Portable ZIM Protector (merged)
+
+This branch also ships [Portable ZIM Protector](docs/PORTABLE_ZIM_PROTECTOR.md) for SHA-256 checking of ZIM libraries across PC/USB-port changes, exact ZFS dataset health checks, and **explicitly authorized** ZFS `readonly=on` enforcement. The original immutable publication/download pipeline stays unchanged.
+
+```bash
+# After installation, use the new convenience command:
+doomsday-zim-portable status --archive /tank/zims
+doomsday-zim-portable verify --archive /tank/zims \
+  --manifest /var/lib/doomsday-vault/zim-manifest.json
+```
+
+On Windows, use the standalone Python tool only if your filesystem is actually mounted; Windows does not natively read ZFS. This is not an auto-import, repair, or disk-formatting agent.
