@@ -24,7 +24,15 @@ For system ZFS image streaming, keep using the existing explicit enrollment flow
 sudo /usr/local/lib/doomsday-vault/enroll-external.sh tank/backups
 ```
 
-Replace `tank/backups` with the **already imported and mounted, verified ZFS dataset** on your independent physical disk. Review the existing enrollment tool's prompts. For ZIM-specific or fleet dataset enrollment, use `sudo doomsday-fleet scan`, `sudo doomsday-fleet enroll POOL` and the existing wizard. The smart data-copy job reuses already enrolled backup datasets; it does not silently commandeer new disks.
+Replace `tank/backups` with the **already imported and mounted, verified ZFS dataset** on your independent physical disk. Review the existing enrollment tool's prompts. For ZIM-specific or fleet dataset enrollment, use `sudo doomsday-fleet scan`, `sudo doomsday-fleet enroll POOL` and the existing wizard. The smart data-copy job reuses already enrolled backup datasets; it does not silently commandeer new disks. **Pool GUID pinning is required.** New fleet enrollments record the GUID. Older fleet/firstboot backup locations without a recorded GUID remain visible in the plan as unavailable until explicitly authorized:
+
+```bash
+sudo doomsday-smart-backup approve-destination \
+  --dataset tank/backups \
+  --confirm 'TRUST tank/backups'
+```
+
+This approval validates the existing dataset's exact mount, independent physical devices, writable state and current GUID, then persists that identity in the root-owned policy. It does not add, format or mount a disk.
 
 ### What is backed up where?
 
@@ -56,7 +64,8 @@ Optional root-owned policy file `/etc/doomsday-vault/smart-backup.json` (not ove
   "minimum_external_free_percent": 10,
   "max_source_gib": 50,
   "max_files": 100000,
-  "auto_restore_missing": false
+  "auto_restore_missing": false,
+  "trusted_destinations": []
 }
 ```
 
