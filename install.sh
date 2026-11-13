@@ -9,11 +9,13 @@ mode=''
 stage_only=false
 bootstrap=false
 ask=false
+desktop=false
 usage() {
-  echo 'Usage: sudo bash install.sh [--core|--ai|--ask] [--bootstrap|--stage-only]'
+  echo 'Usage: sudo bash install.sh [--core|--ai|--ask] [--desktop] [--bootstrap|--stage-only]'
   echo '  --core / --without-ai   Offline knowledge, Kiwix, PDF search, maps, backups; no AI runtime'
   echo '  --ai   / --with-ai      Same features plus optional llama.cpp inference'
   echo '  --ask                   Interactive mode selection'
+  echo '  --desktop               Install optional GNOME Wayland portal packages'
 }
 while (( $# )); do
   case "$1" in
@@ -22,6 +24,7 @@ while (( $# )); do
     --ask) ask=true ;;
     --bootstrap) bootstrap=true ;;
     --stage-only) stage_only=true ;;
+    --desktop) desktop=true ;;
     --help|-h) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
@@ -42,10 +45,35 @@ if [[ -z $mode && ( $ask == true || ( $bootstrap == false && $stage_only == fals
   case "$choice" in 1) mode=core ;; 2) mode=ai ;; *) echo 'Installation cancelled'; exit 1 ;; esac
 fi
 mode=${mode:-core}
+# Self-install transaction: the running installer may live in a temporary
+# GitHub extraction directory. Verify the entire program copy first, then run
+# the installed installer. Only staging/rollback trees created by this tool are
+# deleted. Never remove a user's downloaded source folder.
+installed_tree=/opt/doomsday-firstboot
+if [[ $(pwd -P) != $installed_tree ]]; then
+  token=$(/usr/bin/python3 scripts/deploy_atomic.py stage "$(pwd -P)" "$installed_tree")
+  args=("--$mode")
+  [[ $bootstrap == true ]] && args+=(--bootstrap)
+  [[ $stage_only == true ]] && args+=(--stage-only)
+  [[ $desktop == true ]] && args+=(--desktop)
+  if /bin/bash "$installed_tree/install.sh" "${args[@]}"; then
+    /usr/bin/python3 scripts/deploy_atomic.py complete "$installed_tree" "$token"
+    printf '%s\n' 'Verified install complete; only self-created staging directories were removed.'
+    exit 0
+  else
+    status=$?
+    /usr/bin/python3 scripts/deploy_atomic.py rollback "$installed_tree" "$token" || {
+      echo 'Automatic code rollback failed; inspect /opt and installation transaction.' >&2
+      exit "$status"
+    }
+    systemctl try-restart doomsday-ai-web.service doomsday-kiwix.service 2>/dev/null || true
+    echo 'Installed code rolled back. Existing ZIMs, backups and user source were not deleted.' >&2
+    exit "$status"
+  fi
+fi
 if [[ $stage_only == true ]]; then
   # ISO late-command uses this mode; it only places a boot-time safe installer unit.
   install -d -m 0755 /opt/doomsday-firstboot /etc/systemd/system /var/lib/doomsday-vault /etc/doomsday-vault
-  if [[ $(pwd -P) != /opt/doomsday-firstboot ]]; then cp -a app systemd scripts vendor install.sh /opt/doomsday-firstboot/; fi
   printf '%s\n' "$mode" > "$mode_file"
   chmod 0644 "$mode_file"
   install -m 0644 systemd/doomsday-bootstrap.service /etc/systemd/system/
@@ -53,11 +81,10 @@ if [[ $stage_only == true ]]; then
   exit 0
 fi
 install -d -m 0755 /opt/doomsday-firstboot
-if [[ $(pwd -P) != /opt/doomsday-firstboot ]]; then cp -a app systemd scripts vendor install.sh /opt/doomsday-firstboot/; fi
-install -d -m 0700 /etc/doomsday-vault /var/lib/doomsday-vault /var/lib/doomsday-vault/research
+install -d -m 0700 /etc/doomsday-vault /var/lib/doomsday-vault /var/lib/doomsday-vault/research /var/lib/doomsday-vault/zimlens
 install -d -m 0755 /usr/share/doomsday-vault
 # GitHub text-file uploads may not preserve executable bits on optional scripts.
-install -m 0755 scripts/setup-maplibre.sh /opt/doomsday-firstboot/scripts/setup-maplibre.sh
+chmod 0755 scripts/setup-maplibre.sh
 # Reuse the existing V2 backup/recovery system; don't format disks or adopt unknown drives.
 if [[ $(findmnt -n -o FSTYPE /) == zfs ]]; then
   if command -v zfs >/dev/null && command -v zpool >/dev/null; then
@@ -81,7 +108,12 @@ if [[ $(findmnt -n -o FSTYPE /) == zfs ]]; then
   systemctl disable --now doomsday-external-sync.timer 2>/dev/null || true
 fi
 if command -v apt-get >/dev/null; then apt-get install -y --no-install-recommends iw kiwix-tools aria2 python3-pil python3-libzim poppler-utils tesseract-ocr tesseract-ocr-eng || echo 'Kiwix/iw/aria2 optional packages unavailable (install later when Internet is available)' >&2; fi
-for f in systemd/doomsday-semantic-index.* systemd/doomsday-always-on.service systemd/doomsday-hotspot-portal.service systemd/doomsday-maintenance-auto.* systemd/doomsday-zim-index.* systemd/doomsday-recovery-watch-*.service systemd/doomsday-recovery-watch-*.timer systemd/doomsday-osrm.service systemd/doomsday-osrm-walk.service systemd/doomsday-ai-web.service systemd/doomsday-image-index.* systemd/doomsday-zim-download.* systemd/doomsday-hardware-recheck.* systemd/doomsday-kiwix.service systemd/doomsday-zim-protect.service systemd/doomsday-zim-verify.service systemd/doomsday-zim-verify.timer systemd/doomsday-stream-replica.service systemd/doomsday-stream-replica.timer; do install -m 0644 "$f" /etc/systemd/system/; done
+# Wayland desktop dependencies are opt-in: servers/headless installs do not
+# install GNOME packages and never grant screen control or input permissions.
+if [[ $desktop == true && -x $(command -v apt-get || true) ]]; then
+  apt-get install -y --no-install-recommends xdg-desktop-portal xdg-desktop-portal-gnome pipewire wireplumber || echo 'Some Wayland portal packages were unavailable; run doomsday-desktop-check inside GNOME.' >&2
+fi
+for f in systemd/doomsday-semantic-index.* systemd/doomsday-always-on.service systemd/doomsday-hotspot-portal.service systemd/doomsday-maintenance-auto.* systemd/doomsday-zim-index.* systemd/doomsday-recovery-watch-*.service systemd/doomsday-recovery-watch-*.timer systemd/doomsday-osrm.service systemd/doomsday-osrm-walk.service systemd/doomsday-ai-web.service systemd/doomsday-image-index.* systemd/doomsday-zim-download.* systemd/doomsday-hardware-recheck.* systemd/doomsday-kiwix.service systemd/doomsday-zim-protect.service systemd/doomsday-zim-verify.service systemd/doomsday-zim-verify.timer systemd/doomsday-stream-replica.service systemd/doomsday-stream-replica.timer systemd/doomsday-runtime-integrity.service systemd/doomsday-runtime-integrity.timer; do install -m 0644 "$f" /etc/systemd/system/; done
 # Fortnightly backup policy: preserve admin overrides and use systemd low-I/O priority.
 if [[ ! -f /etc/doomsday-vault/backup-policy.json ]]; then
   install -m 0600 /dev/null /etc/doomsday-vault/backup-policy.json
@@ -126,6 +158,11 @@ cat > /usr/local/bin/doomsday-zim-portable <<'LAUNCH'
 exec /usr/bin/python3 /opt/doomsday-firstboot/scripts/portable_zim_protector.py "$@"
 LAUNCH
 chmod 0755 /usr/local/bin/doomsday-zim-portable
+cat > /usr/local/bin/doomsday-desktop-check <<'LAUNCH'
+#!/bin/sh
+exec /usr/bin/python3 /opt/doomsday-firstboot/scripts/wayland_doctor.py "$@"
+LAUNCH
+chmod 0755 /usr/local/bin/doomsday-desktop-check
 cat > /usr/local/bin/doomsday-wifi <<'LAUNCH'
 #!/bin/sh
 cd /opt/doomsday-firstboot/app
@@ -226,10 +263,14 @@ fi
 if command -v zfs >/dev/null && zfs list -H tank/zims >/dev/null 2>&1; then
   if systemctl list-unit-files 'zfs-scrub-monthly@.timer' --no-legend 2>/dev/null | grep -q 'zfs-scrub-monthly@.timer'; then systemctl enable --now zfs-scrub-monthly@tank.timer || true; fi
 fi
-systemctl enable --now doomsday-maintenance-auto.timer doomsday-backup.timer doomsday-zim-download.timer doomsday-hardware-recheck.timer doomsday-zim-verify.timer doomsday-stream-replica.timer doomsday-zim-protect.service doomsday-kiwix.service doomsday-ai-web.service doomsday-image-index.timer doomsday-zim-index.timer doomsday-recovery-watch-start.timer doomsday-recovery-watch-healthy.timer
+systemctl enable --now doomsday-maintenance-auto.timer doomsday-backup.timer doomsday-zim-download.timer doomsday-hardware-recheck.timer doomsday-zim-verify.timer doomsday-stream-replica.timer doomsday-runtime-integrity.timer doomsday-zim-protect.service doomsday-kiwix.service doomsday-ai-web.service doomsday-image-index.timer doomsday-zim-index.timer doomsday-recovery-watch-start.timer doomsday-recovery-watch-healthy.timer
 # An upgrade must reload the new web server code; enabling an already active
 # service by itself would continue running the old Python process.
-systemctl try-restart doomsday-ai-web.service
+systemctl try-restart doomsday-ai-web.service doomsday-kiwix.service
+# Snapshot the finished installed source, never a temporary download folder.
+# The weekly timer compares checksums without silently replacing local edits.
+/usr/bin/python3 /opt/doomsday-firstboot/scripts/runtime_integrity.py snapshot
+/usr/bin/python3 /opt/doomsday-firstboot/scripts/runtime_integrity.py verify
 systemctl disable doomsday-bootstrap.service 2>/dev/null || true
 touch /var/lib/doomsday-vault/bootstrap-complete
 printf '\nDoomsday first-boot services installed. No disk formatting performed.\n'
@@ -251,6 +292,8 @@ echo 'Read-only OS recovery advisor: sudo doomsday-recovery report'
 echo 'Immutable archive: sudo python3 /opt/doomsday-firstboot/app/archive_guard.py status'
 echo 'Drive backup enrollment: sudo /usr/local/lib/doomsday-vault/enroll-external.sh POOL/DATASET'
 echo 'Safe portability report: sudo /opt/doomsday-firstboot/scripts/portability-report.sh'
+echo 'Wayland/GNOME desktop doctor (no sudo): doomsday-desktop-check --json'
+echo 'Installed-code integrity: sudo /usr/bin/python3 /opt/doomsday-firstboot/scripts/runtime_integrity.py verify'
 echo 'External direct-stream backup: sudo systemctl start doomsday-stream-replica.service'
 echo 'Backup scheduling: local and external backups become eligible every 14 days, and run at idle I/O priority'
 
