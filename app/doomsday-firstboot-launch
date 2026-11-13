@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
-# XDG graphical session only. This will prompt for sudo in the terminal, not execute silently.
+# Graphical, user-consented first-boot setup. Never invoke sudo invisibly.
+set -Eeuo pipefail
 [[ -e /usr/share/doomsday-vault/setup-complete ]] && exit 0
-command -v gnome-terminal >/dev/null || exit 0
-gnome-terminal -- bash -lc 'echo "Doomsday Vault setup (sudo password needed):"; sudo /usr/local/bin/doomsday-setup; echo "Press Enter to close"; read -r' &
+[[ -n ${WAYLAND_DISPLAY:-} || -n ${DISPLAY:-} ]] || exit 0
+
+setup='echo "Doomsday Vault setup (sudo password required):"; sudo /usr/local/bin/doomsday-setup; echo "Press Enter to close"; read -r'
+# GNOME Terminal, GNOME Console, and freedesktop terminal alternatives work
+# under different Ubuntu/Wayland desktop releases. All show a real prompt.
+if command -v gnome-terminal >/dev/null 2>&1; then
+  gnome-terminal -- bash -lc "$setup" &
+elif command -v kgx >/dev/null 2>&1; then
+  kgx -- bash -lc "$setup" &
+elif command -v x-terminal-emulator >/dev/null 2>&1; then
+  x-terminal-emulator -e bash -lc "$setup" &
+else
+  echo 'No graphical terminal found. Open your terminal and run: sudo doomsday-setup' >&2
+fi
