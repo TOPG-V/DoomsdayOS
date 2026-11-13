@@ -22,7 +22,7 @@ def replace_once(text, before, after, path):
 
 
 def patch_html(text):
-    if MARKER in text:return text
+    if MARKER in text or '<link rel="stylesheet" href="/static/zimlens.css">' in text:return text
     text=replace_once(text,'<title>Doomsday Vault — Offline Workspace</title>', '<title>ZimLens — Offline Knowledge</title>','index.html') if '<title>Doomsday Vault — Offline Workspace</title>' in text else text
     text=re.sub(r'<title>[^<]+</title>','<title>ZimLens — Offline Knowledge</title>',text,count=1)
     text=replace_once(text,'<link rel="stylesheet" href="/static/style.css">','<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/zimlens.css">','index.html')
@@ -57,7 +57,7 @@ def patch_html(text):
 
 
 def patch_appjs(text):
-    if MARKER in text:return text
+    if MARKER in text or 'session_id:window.zimlensSessionId' in text:return text
     text=replace_once(text,"downloads:'ZIM Downloads'};", "downloads:'ZIM Downloads',settings:'Settings'};", 'app.js')
     # Preserve existing chat modes; attach conversation context only to normal chat.
     old="const d=await ask({action:mode==='agent'?'agent_chat':mode==='research'?'research_answer':'chat',mode,prompt:q,visual_rag:$('ragVisualChat').checked,browser_location:loc});"
@@ -74,7 +74,7 @@ def patch_appjs(text):
 
 
 def patch_gateway(text):
-    if MARKER in text:return text
+    if MARKER in text or 'from zimlens_api import get as zl_get' in text:return text
     # Route static assets through same loopback web gateway, without a new server.
     old="'/static/app.js':'app.js','/static/manual_location.js':'manual_location.js','/static/style.css':'style.css',"
     new="'/static/app.js':'app.js','/static/manual_location.js':'manual_location.js','/static/style.css':'style.css',\n               '/static/zimlens.css':'zimlens.css','/static/zimlens.js':'zimlens.js','/static/zimlens-extras.js':'zimlens-extras.js','/static/zimlens-logo.svg':'zimlens-logo.svg',"
@@ -186,7 +186,7 @@ def apply(root,source=None):
             target.write_text(updated,encoding='utf-8')
     for rel in EXTRAS:
         dest=root/rel;dest.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copy2(source/rel,dest)
+        if (source/rel).resolve() != dest.resolve():shutil.copy2(source/rel,dest)
     return {'changed':changed, 'added':len(EXTRAS)}
 
 if __name__=='__main__':
