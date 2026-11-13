@@ -176,3 +176,5 @@ footer {color:var(--muted);border-color:var(--line);letter-spacing:0}
 .identity .mark img{filter:none!important}
 :root[data-zl-theme="light"] .identity .mark img{filter:brightness(0)!important}
 .tile:hover,.service-link:hover,.nav-item:hover,.query-panel:hover{box-shadow:none!important;transform:none!important}
+/* Smart disk capacity preview — plain system settings typography. */
+.zl-backup-summary{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--panel2,#252a2b);border:1px solid var(--line,#404443);padding:15px 17px;border-radius:8px;line-height:1.8;font-size:13px;color:var(--text,#eee);font-variant-numeric:tabular-nums}
