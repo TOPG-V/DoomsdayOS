@@ -601,3 +601,8 @@ Manually selected coordinates are saved **only in that browser's local storage**
 ## v7.5 — hotspot, fleet storage, drag-and-drop Lens, semantic RAG and Always On
 
 See [v7.5 installation and safety guide](docs/V75_HOTSPOT_STORAGE_LENS.md). Core/no-AI and Full AI remain selectable from the one-line installer. The Wi-Fi hotspot offers a read-only Kiwix landing page to connected devices. The archive fleet planner supports 1–50 distinct imported ZFS pools and optional two additional independent ZIM backup copies after explicit approval; it never formats raw disks or silently moves partial downloads. Visual Lens accepts dropped images, PDFs and article files, and Quick mode works without models. Optional EmbeddingGemma 2 semantic retrieval uses a compatible local embeddings server; no weights are downloaded. Always On inhibits local sleep only while enabled and externally powered (or under explicit VM unknown-power opt-in). A sleeping Windows/VirtualBox host still stops the VM.
+
+
+## Portable ZIM Protector
+
+The [standalone cross-platform verification script](docs/PORTABLE_ZIM_PROTECTOR.md) is included in `scripts/portable_zim_protector.py`, and installed as `doomsday-zim-portable`. It checks ZIM files against a supplied SHA-256 manifest, reports exact Linux ZFS mount health, and can reassert an archive dataset's `readonly=on` **only with explicit approval and successful verification**. It never imports a pool, formats a drive, starts downloads, or restores corrupted files automatically. Use the existing `archive_guard.py` and `zim_manager.py` for the normal verified publishing/download pipeline.

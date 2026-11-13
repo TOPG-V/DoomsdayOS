@@ -120,6 +120,12 @@ cat > /usr/local/bin/doomsday-zims <<'LAUNCH'
 cd /opt/doomsday-firstboot/app
 exec /usr/bin/python3 zim_manager.py "$@"
 LAUNCH
+# Portable ZIM Protector is opt-in. It never imports or formats disks.
+cat > /usr/local/bin/doomsday-zim-portable <<'LAUNCH'
+#!/bin/sh
+exec /usr/bin/python3 /opt/doomsday-firstboot/scripts/portable_zim_protector.py "$@"
+LAUNCH
+chmod 0755 /usr/local/bin/doomsday-zim-portable
 cat > /usr/local/bin/doomsday-wifi <<'LAUNCH'
 #!/bin/sh
 cd /opt/doomsday-firstboot/app

@@ -24,7 +24,7 @@ async function installModeUI(){
 }
 window.addEventListener('DOMContentLoaded',installModeUI);
 const $=id=>document.getElementById(id);
-const nameMap={home:'Overview',search:'Knowledge Search',chat:'Local Chat',lens:'Visual Lens',translate:'Translate',map:'World Maps',maintenance:'System Health',models:'AI & Hardware',research:'Research & PDFs',downloads:'ZIM Downloads'};
+const nameMap={home:'Overview',search:'Knowledge Search',chat:'Local Chat',lens:'Visual Lens',translate:'Translate',map:'World Maps',maintenance:'System Health',models:'AI & Hardware',research:'Research & PDFs',downloads:'ZIM Downloads',settings:'Settings'};
 function go(name){document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active',el.id===name));document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===name));$('pageName').textContent=nameMap[name]||name;location.hash=name==='home'?'':name;if(name==='models')hardware();if(name==='downloads')refreshZims();}
 document.querySelectorAll('[data-tab]').forEach(el=>el.addEventListener('click',()=>go(el.dataset.tab)));
 document.querySelectorAll('[data-goto]').forEach(el=>el.addEventListener('click',()=>go(el.dataset.goto)));
@@ -45,7 +45,14 @@ $('chatForm').addEventListener('submit',async e=>{e.preventDefault();const q=$('
     loc=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(p=>resolve({lat:p.coords.latitude,lon:p.coords.longitude}),e=>reject(Error('GPS unavailable: '+e.message+'. You can set your location manually in World Maps.')),{enableHighAccuracy:false,timeout:9000}));
    }
   }
-  const d=await ask({action:mode==='agent'?'agent_chat':mode==='research'?'research_answer':'chat',mode,prompt:q,visual_rag:$('ragVisualChat').checked,browser_location:loc});
+  const attachment=window.zimlensChatAttachment?.();
+   const image=attachment?.image||null;
+   const d=await ask({action:image?'vision':mode==='agent'?'agent_chat':mode==='research'?'research_answer':'chat',
+     mode:image?'chat':mode,prompt:q,image:image||undefined,
+     session_id:window.zimlensSessionId,project_id:window.zimlensProject?.()||undefined,
+     skill_ids:window.zimlensSelectedSkills?.()||[],
+     visual_rag:$('ragVisualChat').checked,browser_location:loc});
+   if(d.context)window.zimlensContextUpdated?.(d.context);
   content.textContent=d.answer||'No generated text';displaySources(ai,d);
   if(d.tools_used?.length){const u=el('ul');d.tools_used.forEach(t=>u.appendChild(el('li',t.name+(t.ok?' ✓':': '+t.error))));ai.appendChild(u)}
   if(d.route?.coordinates?.length){const b=el('button','View route in World Maps','secondary');b.type='button';b.addEventListener('click',()=>{mapState.route=d.route.coordinates;go('map');syncVectorOverlay();drawMap();focusRoute(d.route.coordinates);$('routeResult').textContent='AI calculated offline route: '+Math.round(d.route.distance_m/1000*10)/10+' km, '+Math.round(d.route.duration_s/60)+' minutes (no traffic)';});ai.appendChild(b)}
@@ -467,3 +474,5 @@ $('zimAddForm')?.addEventListener('submit',async event=>{
  finally{button.disabled=false}
 });
 setInterval(()=>{if(location.hash==='#downloads')refreshZims()},5000);
+
+// ZimLens vNext — existing chat/search/map/download handlers preserved.
