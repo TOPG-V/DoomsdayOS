@@ -13,6 +13,8 @@ ProtectHome=true
 PrivateTmp=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 MemoryMax=768M
+UMask=0077
+Environment=ZIMLENS_DATA_DIR=/var/lib/doomsday-vault/zimlens
 ReadWritePaths=/var/lib/doomsday-vault
 # Root-owned local gateway needs queue metadata writes for validated ZIM enqueues.
 # ZFS archive mounts remain outside the service's writable allowlist.
