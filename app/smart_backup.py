@@ -29,7 +29,7 @@ RECOVERY_ENV = Path(os.environ.get('DOOMSDAY_RECOVERY_ENV','/etc/doomsday-vault/
 FLEET = Path(os.environ.get('DOOMSDAY_FLEET_STATE',str(STATE/'fleet.json')))
 DEFAULTS = {'enabled': True, 'sources': [str(STATE/'zimlens'),str(STATE/'research'),'/etc/doomsday-vault'],
             'os_reserve_gib':20, 'external_reserve_gib':5,'minimum_external_free_percent':10,
-            'max_source_gib':50, 'max_files':100000, 'keep_generations':3, 'interval_days':14,
+            'max_source_gib':50, 'max_files':100000, 'keep_generations':3, 'interval_days':14, 'trusted_destinations': [],
             'auto_restore_missing': False}
 MANIFEST = 'backup-manifest.json'
 MARKER = '.doomsday-smart-backup'
@@ -56,6 +56,8 @@ def settings():
     if type(config['enabled']) is not bool:raise ValueError('enabled must be boolean')
     if type(config['auto_restore_missing']) is not bool:raise ValueError('auto_restore_missing must be boolean')
     if not isinstance(config['sources'],list) or len(config['sources'])>32:raise ValueError('At most 32 explicit sources')
+    if not isinstance(config['trusted_destinations'],list) or len(config['trusted_destinations'])>50:
+        raise ValueError('At most 50 approved destination records')
     for path in config['sources']:
         if not isinstance(path,str) or not Path(path).is_absolute() or path=='/' or '..' in Path(path).parts:
             raise ValueError('Sources must be absolute, nonroot paths')
@@ -177,8 +179,11 @@ def destinations(root=None,policy=None):
     root=root if root is not None else root_pool()
     os_phys=_zpool_members(root) if root else set()
     result=[]
+    approvals={(x.get('dataset'),x.get('mount')):str(x.get('guid'))
+               for x in policy['trusted_destinations'] if isinstance(x,dict)}
     for row in _enrolled():
         ds=str(row['dataset']);pool=ds.split('/')[0]
+        expected_guid=row.get('expected_guid') or approvals.get((ds,row['mount']))
         view={**row,'pool':pool,'eligible':False,'reason':'', 'available_bytes':0,'capacity_bytes':0}
         if not re.fullmatch(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+',ds) or ds.startswith(('rpool/ROOT/','bpool/BOOT/')):
             view['reason']='Invalid/sensitive backup dataset'
@@ -186,10 +191,12 @@ def destinations(root=None,policy=None):
             view['reason']='Enrolled dataset not mounted at its exact path'
         elif pool==root:
             view['reason']='Same root ZFS pool: local copy only; not independent'
+        elif not expected_guid:
+            view['reason']='Legacy enrolled dataset lacks pinned pool GUID; approve it explicitly'
         else:
             try:
                 guid=_guid(pool)
-                if row.get('expected_guid') and guid != str(row['expected_guid']):
+                if guid != str(expected_guid):
                     view['reason']='Pool GUID changed; refused'
                 else:
                     phys=_zpool_members(pool)
@@ -313,6 +320,45 @@ def plan():
                            'No automatic full OS/EFI rollback or forced pool import.',
                            'No new backup disk is enrolled or formatted automatically.']}
 
+
+
+def approve_destination(dataset,confirmation):
+    """One-time explicit authorization of a legacy enrolled backup dataset.
+
+    The dataset must already have been enrolled by existing DoomsdayOS tools.
+    New disks cannot be adopted with this command.
+    """
+    if os.geteuid()!=0:raise PermissionError('Use sudo to approve a backup dataset')
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+',dataset):
+        raise ValueError('Invalid ZFS dataset')
+    if confirmation!='TRUST '+dataset:
+        raise ValueError('Supply --confirm exactly "TRUST '+dataset+'"')
+    options=[r for r in _enrolled() if r['dataset']==dataset]
+    if len(options)!=1:raise ValueError('Dataset must be previously enrolled exactly once')
+    item=options[0]
+    if not _mount_identity(item['dataset'],item['mount']):raise RuntimeError('Expected dataset is not mounted')
+    pool=dataset.split('/')[0];root=root_pool()
+    if not root or pool==root:raise RuntimeError('Independent root ZFS pool required')
+    source_devices=_zpool_members(root);target_devices=_zpool_members(pool)
+    if not source_devices or not target_devices or not source_devices.isdisjoint(target_devices):
+        raise RuntimeError('Cannot prove backup is on a separate physical disk')
+    if _cmd_ok('zfs','get','-H','-o','value','readonly',dataset)!='off':
+        raise RuntimeError('Backup dataset must be writable')
+    actual=_guid(pool)
+    if item.get('expected_guid') and item['expected_guid']!=actual:
+        raise RuntimeError('Existing enrollment GUID disagrees with imported pool')
+    if POLICY.is_symlink():raise ValueError('Refusing symlinked policy path')
+    config=_read_json(POLICY,{})
+    if not isinstance(config,dict):raise ValueError('Policy must contain a JSON object')
+    records=config.get('trusted_destinations',[])
+    if not isinstance(records,list):raise ValueError('Invalid trusted destination policy')
+    records=[r for r in records if isinstance(r,dict) and r.get('dataset')!=dataset]
+    records.append({'dataset':dataset,'mount':item['mount'],'guid':actual})
+    config['trusted_destinations']=records
+    POLICY.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+    _write_json(POLICY,config)
+    return {'approved_dataset':dataset,'pool_guid':actual,'mountpoint':item['mount'],
+            'note':'Pinned independent backup pool; no disk data was modified'}
 
 def _safe_tree(path,base):
     """Refuse symlinks anywhere below a prevalidated dataset root."""
@@ -544,6 +590,7 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description='Safe automatic backup planner for approved ZFS datasets')
     subs=parser.add_subparsers(dest='action',required=True)
     for name in ('disks','plan','status','run','verify','heal'):subs.add_parser(name)
+    trust=subs.add_parser('approve-destination');trust.add_argument('--dataset',required=True);trust.add_argument('--confirm',required=True)
     r=subs.add_parser('restore-file');r.add_argument('--generation',required=True);r.add_argument('--path',required=True)
     r.add_argument('--confirm',required=True);r.add_argument('--replace',action='store_true')
     a=parser.parse_args(argv)
@@ -551,6 +598,7 @@ def main(argv=None):
     elif a.action=='plan':out=plan()
     elif a.action=='status':out={'plan':plan(),'backups':list_generations()}
     elif a.action=='run':out=perform_backup()
+    elif a.action=='approve-destination':out=approve_destination(a.dataset,a.confirm)
     elif a.action=='verify':out=verify_latest()
     elif a.action=='heal':out=heal_missing()
     else:out=restore_file(a.generation,a.path,a.confirm,a.replace)
