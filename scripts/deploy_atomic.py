@@ -112,6 +112,16 @@ def stage(source: Path, destination: Path) -> str:
         copy_release(source, staging)
         if file_map(staging) != expected:
             raise RuntimeError('SHA-256 verification of self-copied release failed')
+        # MapLibre assets can be explicitly installed offline after setup. They
+        # live in the old program tree, not state/, so preserve that narrow
+        # known optional directory without importing arbitrary executable code.
+        if had_old:
+            optional = destination / 'app' / 'web' / 'vendor'
+            keep = staging / 'app' / 'web' / 'vendor'
+            if optional.is_dir() and not optional.is_symlink() and not keep.exists():
+                if any(p.is_symlink() for p in optional.rglob('*')):
+                    raise ValueError('Refusing symlinked optional MapLibre assets')
+                shutil.copytree(optional, keep)
         if had_old:
             if destination.is_symlink() or not destination.is_dir():
                 raise ValueError('Existing installation is not a regular directory')
