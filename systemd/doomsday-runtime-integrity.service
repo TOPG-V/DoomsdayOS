@@ -1,0 +1,16 @@
+[Unit]
+Description=Read-only Doomsday Vault installed-program integrity verification
+ConditionPathExists=/var/lib/doomsday-vault/installation-manifest.json
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/doomsday-firstboot/scripts/runtime_integrity.py verify
+Nice=19
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+CapabilityBoundingSet=
+TimeoutStartSec=30min
