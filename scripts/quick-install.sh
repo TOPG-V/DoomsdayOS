@@ -2,16 +2,19 @@
 # One-command DoomsdayOS installer. No disk formatting; uses existing install.sh.
 set -Eeuo pipefail
 MODE=''
+DESKTOP=false
 usage(){
-  echo 'Usage: bash quick-install.sh [--core|--ai]'
+  echo 'Usage: bash quick-install.sh [--core|--ai] [--desktop]'
   echo '  --core  no AI: ZIMs, Kiwix, document search, maps, backups'
   echo '  --ai    full: core features plus optional local llama.cpp support'
+  echo '  --desktop  install optional GNOME Wayland portal dependencies'
   echo '  no flag: select a mode interactively (defaults to core without a TTY)'
 }
 while (( $# )); do
   case "$1" in
     --core|--without-ai) [[ -z $MODE || $MODE == core ]] || { usage; exit 2; };MODE=core ;;
     --ai|--with-ai) [[ -z $MODE || $MODE == ai ]] || { usage; exit 2; };MODE=ai ;;
+    --desktop)DESKTOP=true ;;
     -h|--help) usage;exit 0 ;;
     *) usage;exit 2 ;;
   esac
@@ -40,9 +43,11 @@ curl --fail --location --show-error --silent --retry 3 --connect-timeout 15 --ma
 tar -xzf "$work/source.tar.gz" -C "$work"
 source="$work/DoomsdayOS-main/install.sh"
 [[ -f $source ]] || { echo 'GitHub archive did not contain the installer' >&2;exit 1; }
+args=("--$MODE")
+[[ $DESKTOP == true ]] && args+=(--desktop)
 if [[ $(id -u) -eq 0 ]]; then
-  bash "$source" "--$MODE"
+  bash "$source" "${args[@]}"
 else
   command -v sudo >/dev/null || { echo 'sudo is required to install system services' >&2;exit 1; }
-  sudo bash "$source" "--$MODE"
+  sudo bash "$source" "${args[@]}"
 fi
