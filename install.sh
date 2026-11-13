@@ -77,6 +77,7 @@ if [[ $stage_only == true ]]; then
   printf '%s\n' "$mode" > "$mode_file"
   chmod 0644 "$mode_file"
   install -m 0644 systemd/doomsday-bootstrap.service /etc/systemd/system/
+  systemctl daemon-reload
   systemctl enable doomsday-bootstrap.service 2>/dev/null || true
   exit 0
 fi
@@ -263,7 +264,7 @@ fi
 if command -v zfs >/dev/null && zfs list -H tank/zims >/dev/null 2>&1; then
   if systemctl list-unit-files 'zfs-scrub-monthly@.timer' --no-legend 2>/dev/null | grep -q 'zfs-scrub-monthly@.timer'; then systemctl enable --now zfs-scrub-monthly@tank.timer || true; fi
 fi
-systemctl enable --now doomsday-maintenance-auto.timer doomsday-backup.timer doomsday-zim-download.timer doomsday-hardware-recheck.timer doomsday-zim-verify.timer doomsday-stream-replica.timer doomsday-runtime-integrity.timer doomsday-zim-protect.timer doomsday-zim-protect.service doomsday-kiwix.service doomsday-ai-web.service doomsday-image-index.timer doomsday-zim-index.timer doomsday-recovery-watch-start.timer doomsday-recovery-watch-healthy.timer
+systemctl enable --now doomsday-maintenance-auto.timer doomsday-backup.timer doomsday-zim-download.timer doomsday-hardware-recheck.timer doomsday-zim-verify.timer doomsday-stream-replica.timer doomsday-zim-protect.timer doomsday-zim-protect.service doomsday-kiwix.service doomsday-ai-web.service doomsday-image-index.timer doomsday-zim-index.timer doomsday-recovery-watch-start.timer doomsday-recovery-watch-healthy.timer
 # An upgrade must reload the new web server code; enabling an already active
 # service by itself would continue running the old Python process.
 systemctl try-restart doomsday-ai-web.service doomsday-kiwix.service
@@ -271,6 +272,8 @@ systemctl try-restart doomsday-ai-web.service doomsday-kiwix.service
 # The weekly timer compares checksums without silently replacing local edits.
 /usr/bin/python3 /opt/doomsday-firstboot/scripts/runtime_integrity.py snapshot
 /usr/bin/python3 /opt/doomsday-firstboot/scripts/runtime_integrity.py verify
+# Enable the integrity timer only AFTER the new baseline is recorded.
+systemctl enable --now doomsday-runtime-integrity.timer
 systemctl disable doomsday-bootstrap.service 2>/dev/null || true
 touch /var/lib/doomsday-vault/bootstrap-complete
 printf '\nDoomsday first-boot services installed. No disk formatting performed.\n'
