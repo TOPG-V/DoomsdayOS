@@ -518,7 +518,15 @@ class Handler(BaseHTTPRequestHandler):
         # Deny cross-site browser requests even though the server binds only to loopback.
         if not origin:return True
         expected='http://'+self.headers.get('Host','')
-        return origin==expected and self.headers.get('Host','').split(':')[0] in ('localhost','127.0.0.1')
+        # For an authenticated reverse proxy running on loopback, validate the
+        # browser's actual Origin against its requested public Host. The proxy
+        # overwrites X-Doomsday-Reverse-Proxy; direct network access is impossible
+        # because this backend itself binds only to 127.0.0.1.
+        host=self.headers.get('Host','')
+        from_localhost = host.split(':')[0] in ('localhost','127.0.0.1')
+        from_proxy = (self.client_address[0] in ('127.0.0.1','::1') and
+                      self.headers.get('X-Doomsday-Reverse-Proxy')=='enabled')
+        return origin==expected and (from_localhost or from_proxy)
 
     def do_POST(self):
         if urllib.parse.urlsplit(self.path).path not in ('/api/ask','/api/research/upload','/api/research/text','/api/asr','/api/zims/enqueue','/api/zimlens/preferences','/api/zimlens/context/compact','/api/zimlens/items','/api/zimlens/skills/draft','/api/zimlens/attachments','/api/zimlens/sandbox/run'):
